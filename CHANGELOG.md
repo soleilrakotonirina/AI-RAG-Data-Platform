@@ -73,6 +73,13 @@ Résultat attendu :
 ```
 
 ---
+
+### Endpoints disponibles
+
+| Méthode | Endpoint        | Description      |
+|---------|----------------|------------------|
+| GET     | /api/v1/health | Statut de l'API  |
+
 ## Phase 2 — ChromaDB
 
 ### Lancer le test ChromaDB
@@ -90,13 +97,36 @@ Pour réinitialiser complètement :
 rm -rf data/chromadb/
 ```
 
-### Endpoints disponibles
+## Phase 3 — Embeddings
 
-| Méthode | Endpoint        | Description      |
-|---------|----------------|------------------|
-| GET     | /api/v1/health | Statut de l'API  |
+### Modèle utilisé
+
+| Paramètre  | Valeur                          |
+|------------|---------------------------------|
+| Provider   | OpenRouter                      |
+| Modèle     | openai/text-embedding-3-small   |
+| Dimension  | 1536                            |
+| Fallback   | Hash déterministe (sans clé)    |
+
+### Lancer le test Embeddings
+```bash
+python scripts/test_embeddings.py
+```
+
+### Résultat attendu (avec clé OpenRouter)
+```
+[info] Embedding generated via OpenRouter  dim=1536
+[info] Indexation OK  document_count=7
+[info] Requête : 'base de données vectorielle'
+[info]   #1  id=doc_002  score=0.91  topic=chromadb
+[info] === VALIDATION PHASE 3 TERMINEE ===
+```
 
 
+### Sans clé OpenRouter
+
+Le système bascule automatiquement sur un embedding déterministe.
+La pipeline fonctionne mais la pertinence sémantique n'est pas garantie.
 ---
 
 ## Structure du projet
@@ -105,9 +135,11 @@ rag-agent-system/
 │   ├── app/
 │   │   ├── api/        # Routes HTTP (FastAPI)
 │   │   ├── core/       # Config, settings, logger
-│   │   └── db/         # Intégration ChromaDB
+│   │   ├── db/         # Intégration ChromaDB
+│   │   └── services/   # Services d'embedding
 │   └── run.py
 ├── config/             # Configuration globale
+├── indexing/           # Logique d'indexation
 ├── scripts/           # Scripts utilitaires (tests, ingestion, etc.)
 ├── .env                # Variables d'environnement (ne pas commiter)
 ├── Readme.md
@@ -121,7 +153,7 @@ rag-agent-system/
 - [x] Phase 0 — Initialisation projet
 - [x] Phase 1 — Backend FastAPI minimal
 - [x] Phase 2 — ChromaDB
-- [ ] Phase 3 — Embeddings
+- [x] Phase 3 — Embeddings
 - [ ] Phase 4 — Retriever
 - [ ] Phase 5 — LLM
 - [ ] Phase 6 — RAG pipeline

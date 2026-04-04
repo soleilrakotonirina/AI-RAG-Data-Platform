@@ -7,8 +7,6 @@ Responsabilités :
 - Effectuer des recherches par similarité (top-k)
 - Supprimer des documents
 - Retourner des résultats typés et structurés
-
-Ce fichier utilise ChromaDBClient mais ne gère pas la connexion.
 """
 
 from dataclasses import dataclass, field
@@ -20,9 +18,7 @@ from backend.app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Dimension des embeddings fictifs (pour les tests Phase 2)
-# En Phase 3, cette valeur sera remplacée par la dimension réelle du modèle
-FAKE_EMBEDDING_DIM = 384
+FAKE_EMBEDDING_DIM = 1536  # aligné sur text-embedding-3-small
 
 
 # ---------------------------------------------------------------------------
@@ -45,28 +41,23 @@ class SearchResult:
     text: str
     metadata: dict
     distance: float
-    score: float  # 1 - distance (similarité cosine normalisée)
+    score: float
 
 
 # ---------------------------------------------------------------------------
-# Embeddings fictifs (Phase 2 uniquement)
+# Embeddings fictifs — fallback uniquement
 # ---------------------------------------------------------------------------
 
-def generate_fake_embedding(text: str, dim: int = FAKE_EMBEDDING_DIM) -> list[float]:
+def _generate_fake_embedding(text: str, dim: int = FAKE_EMBEDDING_DIM) -> list[float]:
     """
-    Génère un vecteur aléatoire normalisé simulant un embedding.
-
-    IMPORTANT : Ce générateur est uniquement destiné à valider
-    la pipeline ChromaDB en Phase 2. Il sera remplacé en Phase 3
-    par les vrais embeddings du modèle (via OpenRouter).
-
-    Args:
-        text: Texte source (non utilisé, présent pour cohérence d'interface)
-        dim: Dimension du vecteur
-
-    Returns:
-        Vecteur de floats de dimension `dim`, normalisé
+    Fallback interne : vecteur aléatoire normalisé.
+    Utilisé UNIQUEMENT si aucun embedding n'est fourni.
+    En production, embedding_service.py fournit toujours un embedding.
     """
+    logger.warning(
+        "Using fake random embedding — DO NOT use in production",
+        text_preview=text[:40],
+    )
     vector = [random.gauss(0, 1) for _ in range(dim)]
     norm = sum(x ** 2 for x in vector) ** 0.5
     return [x / norm for x in vector]
@@ -80,11 +71,6 @@ class VectorStore:
     """
     Interface d'accès à ChromaDB pour les opérations de stockage
     et de recherche vectorielle.
-
-    Usage :
-        store = VectorStore()
-        store.add_documents([Document(id="1", text="hello world")])
-        results = store.search("hello", top_k=3)
     """
 
     def __init__(self):
@@ -92,35 +78,24 @@ class VectorStore:
         self._collection = self._db.collection
         logger.info("VectorStore initialized")
 
-    # -----------------------------------------------------------------------
-    # Ajout de documents
-    # -----------------------------------------------------------------------
-
     def add_documents(self, documents: list[Document]) -> None:
         """
         Ajoute une liste de documents dans ChromaDB.
-
-        Si un document ne contient pas d'embedding, un embedding fictif
-        est généré automatiquement (Phase 2 uniquement).
+        Si embedding absent → fallback fake (avec warning).
 
         Args:
             documents: Liste de Document à indexer
 
         Raises:
             ValueError: Si la liste est vide
-            Exception: Si ChromaDB rejette l'insertion
         """
         if not documents:
             raise ValueError("La liste de documents est vide.")
 
-        ids = []
-        texts = []
-        embeddings = []
-        metadatas = []
+        ids, texts, embeddings, metadatas = [], [], [], []
 
         for doc in documents:
-            embedding = doc.embedding or generate_fake_embedding(doc.text)
-
+            embedding = doc.embedding or _generate_fake_embedding(doc.text)
             ids.append(doc.id)
             texts.append(doc.text)
             embeddings.append(embedding)
@@ -139,10 +114,6 @@ class VectorStore:
             ids=ids,
         )
 
-    # -----------------------------------------------------------------------
-    # Recherche vectorielle
-    # -----------------------------------------------------------------------
-
     def search(
         self,
         query_text: str,
@@ -150,20 +121,17 @@ class VectorStore:
         query_embedding: Optional[list[float]] = None,
     ) -> list[SearchResult]:
         """
-        Effectue une recherche par similarité dans ChromaDB.
-
-        En Phase 2 : utilise un embedding fictif pour la requête.
-        En Phase 3 : query_embedding sera fourni par embedding_service.py.
+        Recherche par similarité dans ChromaDB.
 
         Args:
             query_text: Texte de la requête (pour logs)
-            top_k: Nombre de résultats à retourner
-            query_embedding: Vecteur de la requête (optionnel en Phase 2)
+            top_k: Nombre de résultats
+            query_embedding: Vecteur réel fourni par embedding_service
 
         Returns:
-            Liste de SearchResult triés par pertinence décroissante
+            Liste de SearchResult triés par pertinence
         """
-        embedding = query_embedding or generate_fake_embedding(query_text)
+        embedding = query_embedding or _generate_fake_embedding(query_text)
 
         raw = self._collection.query(
             query_embeddings=[embedding],
@@ -172,7 +140,6 @@ class VectorStore:
         )
 
         results = []
-
         ids = raw.get("ids", [[]])[0]
         documents = raw.get("documents", [[]])[0]
         metadatas = raw.get("metadatas", [[]])[0]
@@ -196,33 +163,17 @@ class VectorStore:
 
         return results
 
-    # -----------------------------------------------------------------------
-    # Suppression
-    # -----------------------------------------------------------------------
-
     def delete_document(self, doc_id: str) -> None:
-        """
-        Supprime un document par son identifiant.
-
-        Args:
-            doc_id: Identifiant du document à supprimer
-        """
+        """Supprime un document par son identifiant."""
         self._collection.delete(ids=[doc_id])
         logger.info("Document deleted", id=doc_id)
-
-    # -----------------------------------------------------------------------
-    # Utilitaires
-    # -----------------------------------------------------------------------
 
     def count(self) -> int:
         """Retourne le nombre de documents dans la collection."""
         return self._collection.count()
 
     def reset(self) -> None:
-        """
-        Vide complètement la collection. Utile pour les tests.
-        Ne supprime pas la collection — la recrée vide.
-        """
+        """Vide complètement la collection."""
         self._db.reset_collection()
         self._collection = self._db.collection
         logger.warning("VectorStore reset — collection cleared")

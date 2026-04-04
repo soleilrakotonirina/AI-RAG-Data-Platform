@@ -153,6 +153,36 @@ Résultat attendu :
 ```bash
 python scripts/test_chromadb.py
 ```
+# Phase 3 — Embeddings
+
+## Modèle utilisé
+
+| Paramètre  | Valeur                          |
+|------------|---------------------------------|
+| Provider   | OpenRouter                      |
+| Modèle     | openai/text-embedding-3-small   |
+| Dimension  | 1536                            |
+| Fallback   | Hash déterministe (sans clé)    |
+
+## Lancer le test Embeddings
+```bash
+python scripts/test_embeddings.py
+```
+
+## Résultat attendu (avec clé OpenRouter)
+```
+[info] Embedding generated via OpenRouter  dim=1536
+[info] Indexation OK  document_count=7
+[info] Requête : 'base de données vectorielle'
+[info]   #1  id=doc_002  score=0.91  topic=chromadb
+[info] === VALIDATION PHASE 3 TERMINEE ===
+```
+
+
+## Sans clé OpenRouter
+
+Le système bascule automatiquement sur un embedding déterministe.
+La pipeline fonctionne mais la pertinence sémantique n'est pas garantie.
 
 ---
 
