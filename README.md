@@ -146,6 +146,14 @@ Résultat attendu :
   "status": "ok"
 }
 ```
+
+# Phase 2 — ChromaDB
+
+## Lancer le test ChromaDB
+```bash
+python scripts/test_chromadb.py
+```
+
 ---
 
 # ARCHITECTURE  (RAG + AGENTS + OpenRouter)

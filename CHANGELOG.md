@@ -73,12 +73,29 @@ Résultat attendu :
 ```
 
 ---
+## Phase 2 — ChromaDB
 
-## Endpoints disponibles
+### Lancer le test ChromaDB
+```bash
+python scripts/test_chromadb.py
+```
 
-| Méthode | Endpoint        | Description     |
-|---------|----------------|-----------------|
-| GET     | /api/v1/health | Statut de l'API |
+### Données persistées
+
+Les données ChromaDB sont stockées dans :
+
+```data/chromadb/```
+Pour réinitialiser complètement :
+```bash
+rm -rf data/chromadb/
+```
+
+### Endpoints disponibles
+
+| Méthode | Endpoint        | Description      |
+|---------|----------------|------------------|
+| GET     | /api/v1/health | Statut de l'API  |
+
 
 ---
 
@@ -87,9 +104,11 @@ rag-agent-system/
 ├── backend/            # API FastAPI + logique IA
 │   ├── app/
 │   │   ├── api/        # Routes HTTP (FastAPI)
-│   │   └── core/       # Config, settings, logger
+│   │   ├── core/       # Config, settings, logger
+│   │   └── db/         # Intégration ChromaDB
 │   └── run.py
 ├── config/             # Configuration globale
+├── scripts/           # Scripts utilitaires (tests, ingestion, etc.)
 ├── .env                # Variables d'environnement (ne pas commiter)
 ├── Readme.md
 └── requirements.txt
@@ -101,7 +120,7 @@ rag-agent-system/
 
 - [x] Phase 0 — Initialisation projet
 - [x] Phase 1 — Backend FastAPI minimal
-- [ ] Phase 2 — ChromaDB
+- [x] Phase 2 — ChromaDB
 - [ ] Phase 3 — Embeddings
 - [ ] Phase 4 — Retriever
 - [ ] Phase 5 — LLM
