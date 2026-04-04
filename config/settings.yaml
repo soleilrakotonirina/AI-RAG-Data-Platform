@@ -1,0 +1,31 @@
+app:
+  name: "rag-agent-system"
+  version: "0.1.0"
+  description: "RAG + Agentic AI System"
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  prefix: "/api/v1"
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://localhost:8080"
+
+logging:
+  level: "INFO"
+  format: "json"
+
+chromadb:
+  host: "localhost"
+  port: 8001
+  collection_name: "rag_documents"
+
+retrieval:
+  top_k: 5
+  score_threshold: 0.7
+
+llm:
+  provider: "openrouter"
+  default_model: "mistralai/mistral-7b-instruct"
+  max_tokens: 1024
+  temperature: 0.2
