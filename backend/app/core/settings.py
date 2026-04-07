@@ -3,7 +3,6 @@ backend/app/core/settings.py
 
 Source unique de vérité pour toute la configuration de l'application.
 Utilise pydantic-settings pour valider et typer les variables d'environnement.
-Les valeurs sont lues depuis .env via la classe Settings.
 """
 
 from functools import lru_cache
@@ -11,10 +10,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """
-    Configuration globale de l'application.
-    Chaque champ mappe directement à une variable d'environnement.
-    """
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -34,13 +29,17 @@ class Settings(BaseSettings):
     api_port: int = 8000
 
     # OpenRouter
-    openrouter_api_key: str = ""
+    openrouter_api_key: str = "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"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # ChromaDB
     chroma_host: str = "localhost"
     chroma_port: int = 8001
     chroma_collection_name: str = "rag_documents"
+
+    # Retrieval
+    retrieval_top_k: int = 5
+    retrieval_score_threshold: float = 0.0
 
     # Logging
     log_level: str = "INFO"
@@ -50,7 +49,6 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """
     Retourne une instance unique de Settings (singleton via cache).
-    Utiliser cette fonction partout dans le projet pour accéder à la config.
 
     Returns:
         Instance Settings validée et prête à l'emploi

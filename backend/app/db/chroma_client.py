@@ -20,7 +20,11 @@ from chromadb.config import Settings as ChromaSettings
 from backend.app.core.settings import get_settings
 from backend.app.core.logger import get_logger
 
+import logging
+
 logger = get_logger(__name__)
+
+logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
 
 
 def get_chroma_client() -> chromadb.ClientAPI:

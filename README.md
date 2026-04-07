@@ -178,6 +178,26 @@ python scripts/test_embeddings.py
 [info] === VALIDATION PHASE 3 TERMINEE ===
 ```
 
+## Phase 4 — Retriever
+
+### Composants
+
+| Fichier                              | Rôle                                      |
+|--------------------------------------|-------------------------------------------|
+| backend/app/services/retriever_service.py | Retrieval sémantique (embedding + search) |
+| backend/app/rag/context.py           | Construction du contexte pour le LLM      |
+
+### Lancer le test Retriever
+```bash
+python scripts/test_retriever.py
+```
+
+### Résultat attendu
+
+[info] Retrieval OK  found=3  top_k=3  total_in_db=7
+[info] Context OK  document_count=3  context_length=487
+[info] === VALIDATION PHASE 4 TERMINEE ===
+
 
 ## Sans clé OpenRouter
 

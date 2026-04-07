@@ -122,6 +122,26 @@ python scripts/test_embeddings.py
 [info] === VALIDATION PHASE 3 TERMINEE ===
 ```
 
+## Phase 4 — Retriever
+
+### Composants
+
+| Fichier                              | Rôle                                      |
+|--------------------------------------|-------------------------------------------|
+| backend/app/services/retriever_service.py | Retrieval sémantique (embedding + search) |
+| backend/app/rag/context.py           | Construction du contexte pour le LLM      |
+
+### Lancer le test Retriever
+```bash
+python scripts/test_retriever.py
+```
+
+### Résultat attendu
+```
+[info] Retrieval OK  found=3  top_k=3  total_in_db=7
+[info] Context OK  document_count=3  context_length=487
+[info] === VALIDATION PHASE 4 TERMINEE ===
+```
 
 ### Sans clé OpenRouter
 
@@ -136,6 +156,7 @@ rag-agent-system/
 │   │   ├── api/        # Routes HTTP (FastAPI)
 │   │   ├── core/       # Config, settings, logger
 │   │   ├── db/         # Intégration ChromaDB
+│   │   ├── rag/        # Logique RAG (retriever, context builder)
 │   │   └── services/   # Services d'embedding
 │   └── run.py
 ├── config/             # Configuration globale
@@ -154,8 +175,8 @@ rag-agent-system/
 - [x] Phase 1 — Backend FastAPI minimal
 - [x] Phase 2 — ChromaDB
 - [x] Phase 3 — Embeddings
-- [ ] Phase 4 — Retriever
-- [ ] Phase 5 — LLM
+- [x] Phase 4  — Retriever (RAG simple)
+- [ ] Phase 5 — LLM (OpenRouter)
 - [ ] Phase 6 — RAG pipeline
 - [ ] Phase 7 — Endpoint /chat
 - [ ] Phase 8 — Reranking
