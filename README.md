@@ -199,6 +199,43 @@ python scripts/test_retriever.py
 [info] === VALIDATION PHASE 4 TERMINEE ===
 
 
+
+## Phase 5 — LLM (Génération de réponse)
+
+### Modèle LLM utilisé
+
+| Paramètre   | Valeur                              		   |
+|-------------|------------------------------------------------|
+| Provider    | OpenRouter                                     |
+| Modèle      | mistralai/mistral-small-3.1-24b-instruct       |
+| Endpoint    | /chat/completions                   	       |
+| Timeout     | 60 secondes                         		   |
+
+### Lancer le test LLM
+```bash
+python scripts/test_llm.py
+```
+
+### Résultat attendu
+[info     ] Réponse AVEC RAG :
+Pour construire un agent IA, le contexte mentionne LangGraph comme un framework spécifique pour construire des agents IA avec gestion d'état et workflows.
+[info     ] Comparaison                    avec_rag_length=154 sans_rag_length=117 sources_used=3
+[info     ] --- Test 5 : Gestion contexte vide ---
+[info     ] Starting LLM generation        context_empty=True document_count=0 model=mistralai/mistral-small-3.1-24b-instruct question=Qu'est-ce que Kubernetes ?
+[warning  ] No context available — generating without RAG question=Qu'est-ce que Kubernetes ?
+[info     ] Sending request to OpenRouter  max_tokens=1024 message_count=2 model=mistralai/mistral-small-3.1-24b-instruct temperature=0.2
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[info     ] OpenRouter response received   completion_tokens=14 model=mistralai/mistral-small-3.1-24b-instruct prompt_tokens=139 response_preview=Je ne peux pas répondre à cette question avec les informations disponibles. total_tokens=153
+[info     ] LLM generation completed       answer_length=75 context_used=False document_count=0 question=Qu'est-ce que Kubernetes ?
+[info     ] Réponse contexte vide :
+Je ne peux pas répondre à cette question avec les informations disponibles.
+[info     ] === VALIDATION PHASE 5 TERMINEE ===
+[info     ] OpenRouterClient operationnel 
+[info     ] LLMService operationnel       
+[info     ] Pipeline RAG complet : question → retrieval → contexte → LLM → réponse
+
+
+
 ## Sans clé OpenRouter
 
 Le système bascule automatiquement sur un embedding déterministe.
