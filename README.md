@@ -238,8 +238,10 @@ Je ne peux pas répondre à cette question avec les informations disponibles.
 
 ### Architecture
 run_rag_pipeline(question)
+
 │
 ├── RetrieverService.retrieve() 
+
 │       └── embed_text()          → OpenRouter embeddings
 │       └── VectorStore.search()  → ChromaDB
 │
