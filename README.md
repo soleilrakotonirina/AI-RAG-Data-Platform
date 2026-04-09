@@ -217,6 +217,7 @@ python scripts/test_llm.py
 ```
 
 ### Résultat attendu
+```
 [info     ] Réponse AVEC RAG :
 Pour construire un agent IA, le contexte mentionne LangGraph comme un framework spécifique pour construire des agents IA avec gestion d'état et workflows.
 [info     ] Comparaison                    avec_rag_length=154 sans_rag_length=117 sources_used=3
@@ -233,6 +234,7 @@ Je ne peux pas répondre à cette question avec les informations disponibles.
 [info     ] OpenRouterClient operationnel 
 [info     ] LLMService operationnel       
 [info     ] Pipeline RAG complet : question → retrieval → contexte → LLM → réponse
+```
 
 ## Phase 6 — Pipeline RAG complet
 
@@ -256,7 +258,7 @@ run_rag_pipeline(question)
 ```
 
 ### Améliorations implémentées
-
+```
 | Amélioration | Impact |
 |---|---|
 | Cache embeddings | Évite appels API redondants |
@@ -267,6 +269,7 @@ run_rag_pipeline(question)
 | Prompts adaptatifs | Instructions selon confiance (HIGH/MED/LOW) |
 | Score qualité | Métrique objective du retrieval |
 | Retry embeddings | Résilience aux erreurs réseau |
+```
 
 ### Lancer le test pipeline
 
@@ -281,7 +284,7 @@ python scripts/test_rag_real.py
 ```
 
 ### Résultats Phase 6 — Documents réels
-
+```
 | Question | Score | Confiance | Sources |
 |---|---|---|---|
 | Défis économiques Madagascar | 0.770 | HIGH | Rapports WB + Climate |
@@ -290,6 +293,7 @@ python scripts/test_rag_real.py
 | Pauvreté pays développement | 0.678 | MEDIUM | Rapports WB x3 |
 | Urbanisation Madagascar | 0.828 | HIGH | URBANIZATION x4 |
 | **Moyenne** | **0.706** | | |
+```
 
 ### Comportement multilingue
 
