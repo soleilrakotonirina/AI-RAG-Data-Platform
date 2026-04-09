@@ -19,7 +19,7 @@ from backend.app.core.config import (
 )
 from backend.app.core.logger import configure_logging, get_logger
 from backend.app.core.settings import get_settings
-from backend.app.api.routes import health
+from backend.app.api.routes import health, chat
 
 # Initialisation du logging AVANT tout le reste
 configure_logging()
@@ -75,9 +75,13 @@ def create_app() -> FastAPI:
 
     # Enregistrement des routers
     app.include_router(health.router, prefix=API_PREFIX)
+    app.include_router(chat.router, prefix=API_PREFIX)
 
-    logger.info("FastAPI application created", prefix=API_PREFIX)
-
+    logger.info(
+        "FastAPI application created",
+        prefix=API_PREFIX,
+        routes=["/health", "/chat", "/chat/status"],
+    )
     return app
 
 

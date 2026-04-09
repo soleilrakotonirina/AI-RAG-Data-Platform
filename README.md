@@ -311,6 +311,53 @@ print(result.quality_score)
 ```
 
 ---
+## Phase 7 — Endpoint /chat
+
+### Lancer l'API
+
+```bash
+python backend/run.py
+```
+
+### Endpoints disponibles
+
+| Méthode | Endpoint              | Description              |
+|---------|-----------------------|--------------------------|
+| GET     | /api/v1/health        | Statut de l'API          |
+| GET     | /api/v1/chat/status   | Statut du pipeline RAG   |
+| POST    | /api/v1/chat          | Question → Réponse RAG   |
+
+### Documentation Swagger
+Lancer l'API et aller sur : http://localhost:8000/docs
+
+### Format de réponse
+
+```json
+{
+  "answer": "Réponse en français...",
+  "sources": [
+    {
+      "id": "chunk_id",
+      "score": 0.6768,
+      "confidence": "high",
+      "source_file": "rapport.pdf",
+      "topic": "economics",
+      "chunk_index": 98
+    }
+  ],
+  "metadata": {
+    "model": "mistralai/mistral-small-3.1-24b-instruct",
+    "language": "fr",
+    "document_count": 4,
+    "quality_score": 0.77,
+    "confidence_level": "high",
+    "context_used": true,
+    "from_cache": false,
+    "duration_ms": 34293
+  }
+}
+```
+---
 
 
 ## Sans clé OpenRouter

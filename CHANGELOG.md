@@ -424,6 +424,7 @@ python scripts/test_rag_real.py
 
 ### Résultats Phase 6 — Documents réels
 
+```
 | Question | Score | Confiance | Sources |
 |---|---|---|---|
 | Défis économiques Madagascar | 0.770 | HIGH | Rapports WB + Climate |
@@ -432,6 +433,7 @@ python scripts/test_rag_real.py
 | Pauvreté pays développement | 0.678 | MEDIUM | Rapports WB x3 |
 | Urbanisation Madagascar | 0.828 | HIGH | URBANIZATION x4 |
 | **Moyenne** | **0.706** | | |
+```
 
 ### Comportement multilingue
 
@@ -450,6 +452,84 @@ result = run_rag_pipeline("Quels sont les défis économiques de Madagascar ?")
 print(result.answer)
 print(result.confidence_level)
 print(result.quality_score)
+```
+---
+## Phase 7 — Endpoint /chat
+
+### Lancer l'API
+
+```bash
+python backend/run.py
+```
+
+### Endpoints disponibles
+
+| Méthode | Endpoint              | Description              |
+|---------|-----------------------|--------------------------|
+| GET     | /api/v1/health        | Statut de l'API          |
+| GET     | /api/v1/chat/status   | Statut du pipeline RAG   |
+| POST    | /api/v1/chat          | Question → Réponse RAG   |
+
+### Exemples curl
+
+```bash
+# Statut pipeline
+curl http://localhost:8000/api/v1/chat/status
+
+# Question simple
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Quels sont les défis économiques de Madagascar ?"}'
+
+# Avec paramètres avancés
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "Comment le changement climatique affecte-t-il Madagascar ?",
+    "top_k": 5,
+    "use_mmr": true
+  }'
+```
+
+### Documentation Swagger
+Lancer l'API et aller sur : http://localhost:8000/docs
+
+### Format de réponse
+
+```json
+{
+  "answer": "Réponse en français...",
+  "sources": [
+    {
+      "id": "chunk_id",
+      "score": 0.6768,
+      "confidence": "high",
+      "source_file": "rapport.pdf",
+      "topic": "economics",
+      "chunk_index": 98
+    }
+  ],
+  "metadata": {
+    "model": "mistralai/mistral-small-3.1-24b-instruct",
+    "language": "fr",
+    "document_count": 4,
+    "quality_score": 0.77,
+    "confidence_level": "high",
+    "context_used": true,
+    "from_cache": false,
+    "duration_ms": 34293
+  }
+}
+```
+
+### Tester l'API
+
+```bash
+# API doit être lancée dans un terminal
+python backend/run.py
+
+# Dans un second terminal
+python scripts/test_api_chat.py
 ```
 
 ---
@@ -480,7 +560,7 @@ print(result.quality_score)
 - [x] Phase 4  — Retriever (RAG simple)
 - [x] Phase 5  — LLM (OpenRouter)
 - [x] Phase 6  — Pipeline RAG complet (documents réels EN→FR)
-- [ ] Phase 7  — Endpoint /chat
+- [x] Phase 7  — Endpoint /chat
 - [ ] Phase 8  — Reranking
 - [ ] Phase 9  — Agent LangGraph
 - [ ] Phase 10 — Tools (Agent)
