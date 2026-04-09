@@ -237,6 +237,7 @@ Je ne peux pas répondre à cette question avec les informations disponibles.
 ## Phase 6 — Pipeline RAG complet
 
 ### Architecture
+```
 run_rag_pipeline(question)
         │
         ├── RetrieverService.retrieve() 
@@ -252,6 +253,7 @@ run_rag_pipeline(question)
         └── LLMService.generate() → OpenRouter
                 └── OpenRouterClient.generate_completion()
                         └── OpenRouter /chat/completions
+```
 
 ### Améliorations implémentées
 
