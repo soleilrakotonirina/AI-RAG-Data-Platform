@@ -234,6 +234,81 @@ Je ne peux pas répondre à cette question avec les informations disponibles.
 [info     ] LLMService operationnel       
 [info     ] Pipeline RAG complet : question → retrieval → contexte → LLM → réponse
 
+## Phase 6 — Pipeline RAG complet
+
+### Architecture
+run_rag_pipeline(question)
+        │
+        ├── RetrieverService.retrieve() 
+        │       └── embed_text()          → OpenRouter embeddings
+        │       └── VectorStore.search()  → ChromaDB
+        │
+        ├── ContextBuilder.build() 		  → formatage
+        │       └── format_document_block()
+        │
+        ├── PromptBuilder.build_rag_prompt() → prompts.py
+        │       └── prompts.py templates
+        │
+        └── LLMService.generate() → OpenRouter
+                └── OpenRouterClient.generate_completion()
+                        └── OpenRouter /chat/completions
+
+### Améliorations implémentées
+
+| Amélioration | Impact |
+|---|---|
+| Cache embeddings | Évite appels API redondants |
+| Cache requêtes | Réponse instantanée si même question |
+| MMR | Documents diversifiés |
+| Top-k adaptatif | Filtre automatique chunks peu pertinents |
+| Déduplication | Supprime fragments quasi-identiques |
+| Prompts adaptatifs | Instructions selon confiance (HIGH/MED/LOW) |
+| Score qualité | Métrique objective du retrieval |
+| Retry embeddings | Résilience aux erreurs réseau |
+
+### Lancer le test pipeline
+
+```bash
+python scripts/test_rag_pipeline.py
+```
+
+### Lancer le test documents réels
+
+```bash
+python scripts/test_rag_real.py
+```
+
+### Résultats Phase 6 — Documents réels
+
+| Question | Score | Confiance | Sources |
+|---|---|---|---|
+| Défis économiques Madagascar | 0.770 | HIGH | Rapports WB + Climate |
+| Changement climatique | 0.669 | MEDIUM | Climate Report x4 |
+| Indicateurs PIB | 0.585 | MEDIUM | GDP ML + Rapports |
+| Pauvreté pays développement | 0.678 | MEDIUM | Rapports WB x3 |
+| Urbanisation Madagascar | 0.828 | HIGH | URBANIZATION x4 |
+| **Moyenne** | **0.706** | | |
+
+### Comportement multilingue
+
+```
+Documents  : anglais (PDFs Banque Mondiale)
+Questions  : français (utilisateur)
+Réponses   : français (reformulation intelligente)
+```
+
+### Point d'entrée unique
+
+```python
+from backend.app.rag.chain import run_rag_pipeline
+
+result = run_rag_pipeline("Quels sont les défis économiques de Madagascar ?")
+print(result.answer)
+print(result.confidence_level)
+print(result.quality_score)
+```
+
+---
 
 
 ## Sans clé OpenRouter

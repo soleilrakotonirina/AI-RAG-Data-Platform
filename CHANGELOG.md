@@ -1,3 +1,6 @@
+## README.md — Mise à jour complète Phase 6
+
+```markdown
 # RAG Agent System
 
 Système RAG + Agentic AI — Backend FastAPI + ChromaDB + LangGraph + Dagster
@@ -24,6 +27,7 @@ Système RAG + Agentic AI — Backend FastAPI + ChromaDB + LangGraph + Dagster
 ---
 
 ## Installation
+
 ```bash
 # Cloner le projet
 git clone <repo>
@@ -44,204 +48,10 @@ cp .env.example .env
 
 ---
 
-## Lancer l'API
-```bash
-python backend/run.py
-```
-
-L'API est disponible sur : http://localhost:8000
-
-Documentation Swagger : http://localhost:8000/docs
-
----
-
-## Tester les endpoints
-
-### Health check
-```bash
-curl http://localhost:8000/api/v1/health
-```
-
-Résultat attendu :
-```json
-{
-  "status": "ok",
-  "app_name": "rag-agent-system",
-  "version": "0.1.0",
-  "environment": "development"
-}
-```
-
----
-
-### Endpoints disponibles
-
-| Méthode | Endpoint        | Description      |
-|---------|----------------|------------------|
-| GET     | /api/v1/health | Statut de l'API  |
-
-## Phase 2 — ChromaDB
-
-### Lancer le test ChromaDB
-```bash
-python scripts/test_chromadb.py
-```
-
-### Données persistées
-
-Les données ChromaDB sont stockées dans :
-
-```data/chromadb/```
-Pour réinitialiser complètement :
-```bash
-rm -rf data/chromadb/
-```
-
-## Phase 3 — Embeddings
-
-### Modèle utilisé
-
-| Paramètre  | Valeur                          |
-|------------|---------------------------------|
-| Provider   | OpenRouter                      |
-| Modèle     | openai/text-embedding-3-small   |
-| Dimension  | 1536                            |
-| Fallback   | Hash déterministe (sans clé)    |
-
-### Lancer le test Embeddings
-```bash
-python scripts/test_embeddings.py
-```
-
-### Résultat attendu (avec clé OpenRouter)
-```
-[info] Embedding generated via OpenRouter  dim=1536
-[info] Indexation OK  document_count=7
-[info] Requête : 'base de données vectorielle'
-[info]   #1  id=doc_002  score=0.91  topic=chromadb
-[info] === VALIDATION PHASE 3 TERMINEE ===
-```
-
-## Phase 4 — Retriever
-
-### Composants
-
-| Fichier                              | Rôle                                      |
-|--------------------------------------|-------------------------------------------|
-| backend/app/services/retriever_service.py | Retrieval sémantique (embedding + search) |
-| backend/app/rag/context.py           | Construction du contexte pour le LLM      |
-
-### Lancer le test Retriever
-```bash
-python scripts/test_retriever.py
-```
-
-### Résultat attendu
-```
-[info] Retrieval OK  found=3  top_k=3  total_in_db=7
-[info] Context OK  document_count=3  context_length=487
-[info] === VALIDATION PHASE 4 TERMINEE ===
-```
-
-## Phase 5 — LLM (Génération de réponse)
-
-### Modèle LLM utilisé
-
-| Paramètre   | Valeur                              		   |
-|-------------|------------------------------------------------|
-| Provider    | OpenRouter                                     |
-| Modèle      | mistralai/mistral-small-3.1-24b-instruct       |
-| Endpoint    | /chat/completions                   	       |
-| Timeout     | 60 secondes                         		   |
-
-### Lancer le test LLM
-```bash
-python scripts/test_llm.py
-```
-
-### Résultat attendu
-[info     ] Réponse AVEC RAG :
-Pour construire un agent IA, le contexte mentionne LangGraph comme un framework spécifique pour construire des agents IA avec gestion d'état et workflows.
-[info     ] Comparaison                    avec_rag_length=154 sans_rag_length=117 sources_used=3
-[info     ] --- Test 5 : Gestion contexte vide ---
-[info     ] Starting LLM generation        context_empty=True document_count=0 model=mistralai/mistral-small-3.1-24b-instruct question=Qu'est-ce que Kubernetes ?
-[warning  ] No context available — generating without RAG question=Qu'est-ce que Kubernetes ?
-[info     ] Sending request to OpenRouter  max_tokens=1024 message_count=2 model=mistralai/mistral-small-3.1-24b-instruct temperature=0.2
-HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
-[info     ] OpenRouter response received   completion_tokens=14 model=mistralai/mistral-small-3.1-24b-instruct prompt_tokens=139 response_preview=Je ne peux pas répondre à cette question avec les informations disponibles. total_tokens=153
-[info     ] LLM generation completed       answer_length=75 context_used=False document_count=0 question=Qu'est-ce que Kubernetes ?
-[info     ] Réponse contexte vide :
-Je ne peux pas répondre à cette question avec les informations disponibles.
-[info     ] === VALIDATION PHASE 5 TERMINEE ===
-[info     ] OpenRouterClient operationnel 
-[info     ] LLMService operationnel       
-[info     ] Pipeline RAG complet : question → retrieval → contexte → LLM → réponse
-
-
-### Sans clé OpenRouter
-
-Le système bascule automatiquement sur un embedding déterministe.
-La pipeline fonctionne mais la pertinence sémantique n'est pas garantie.
----
-
-## Structure du projet
-rag-agent-system/
-├── backend/            # API FastAPI + logique IA
-│   ├── app/
-│   │   ├── api/        # Routes HTTP (FastAPI)
-│   │   ├── core/       # Config, settings, logger
-│   │   ├── db/         # Intégration ChromaDB
-│   │   ├── rag/        # Logique RAG (retriever, context builder)
-│   │   └── services/   # Services d'embedding
-│   └── run.py
-├── config/             # Configuration globale
-├── indexing/           # Logique d'indexation
-├── scripts/           # Scripts utilitaires (tests, ingestion, etc.)
-├── .env                # Variables d'environnement (ne pas commiter)
-├── Readme.md
-└── requirements.txt
-
----
-
-context: Path: backend/app/services/openrouter_client.py
-### Changer de modèle LLM
-
-Modifier dans `backend/app/services/openrouter_client.py` :
-```python
-DEFAULT_LLM_MODEL = "openai/gpt-4o-mini"
-# ou
-DEFAULT_LLM_MODEL = "anthropic/claude-3-haiku"
-# ou
-DEFAULT_LLM_MODEL = "mistralai/mistral-7b-instruct"
-```
-
-## Phases de développement
-
-
-- [x] Phase 0 — Initialisation projet
-- [x] Phase 1 — Backend FastAPI minimal
-- [x] Phase 2 — ChromaDB
-- [x] Phase 3 — Embeddings
-- [x] Phase 4  — Retriever (RAG simple)
-- [x] Phase 5 — LLM (OpenRouter)
-- [ ] Phase 6 — Pipeline RAG complet
-- [ ] Phase 7 — Endpoint /chat
-- [ ] Phase 8 — Reranking
-- [ ] Phase 9 — Agent LangGraph
-- [ ] Phase 10 — Tools
-- [ ] Phase 11 — Ingestion pipeline
-- [ ] Phase 12 — Dagster
-- [ ] Phase 13 — OpenWebUI
-- [ ] Phase 14 — Tests
-- [ ] Phase 15 — Optimisation
-- [ ] Phase 16 — Production
-
----
-
-
 ## Configuration
 
 ### Fichier .env
+
 ```env
 # Application
 APP_NAME=rag-agent-system
@@ -254,13 +64,17 @@ API_HOST=0.0.0.0
 API_PORT=8000
 
 # OpenRouter
-OPENROUTER_API_KEY=your_openrouter_api_key_here
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
 # ChromaDB
 CHROMA_HOST=localhost
 CHROMA_PORT=8001
 CHROMA_COLLECTION_NAME=rag_documents
+
+# Retrieval
+RETRIEVAL_TOP_K=5
+RETRIEVAL_SCORE_THRESHOLD=0.0
 
 # Logging
 LOG_LEVEL=INFO
@@ -276,62 +90,436 @@ LOG_LEVEL=INFO
 
 ---
 
-## Instructions d'exécution complètes
+## Lancer l'API
 
-Exécuter dans cet ordre depuis la racine `rag-agent-system/` :
-
-### 1. Créer l'environnement virtuel
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-### Séquence complète à exécuter dans l'ordre
-
-* Installer les headers Python 3.13
-```bash
-sudo apt update
-sudo apt install python3.13-dev -y
-```
-
-### 2. Installer les dépendances
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configurer .env
-
-Vérifier que les valeurs `APP_ENV`, `API_HOST`, `API_PORT` sont correctes.
-Les clés API (OpenRouter) ne sont pas requises avant la Phase 5.
-
-### 4. Lancer l'API
 ```bash
 python backend/run.py
 ```
 
-### 5. Tester le endpoint health
-```bash
-curl http://localhost:8000/api/v1/health
+L'API est disponible sur : http://localhost:8000
+
+Documentation Swagger : http://localhost:8000/docs
+
+---
+
+## Endpoints disponibles
+
+| Méthode | Endpoint        | Description     |
+|---------|----------------|-----------------|
+| GET     | /api/v1/health | Statut de l'API |
+
+---
+
+## Architecture du système
+
+### Récapitulatif Phase 0 → 6
+
+```
+Question utilisateur (français)
+        │
+        ▼
+embed_text()
+  ├── Modèle  : openai/text-embedding-3-small
+  ├── Dim     : 1536
+  ├── Cache   : LRU (évite appels API redondants)
+  └── Retry   : automatique (backoff exponentiel)
+        │
+        ▼
+ChromaDB.query()
+  ├── Documents : 1128 chunks (PDFs réels)
+  ├── Mode      : embedded local persistant
+  └── Metric    : similarité cosine
+        │
+        ▼
+Adaptive top-k
+  ├── Candidats : top-12 bruts
+  ├── Seuil     : best_score × 0.6
+  └── Résultat  : 4 documents pertinents
+        │
+        ▼
+MMR (Maximal Marginal Relevance)
+  ├── Lambda    : 0.7 (pertinence + diversité)
+  ├── Objectif  : éviter redondance des sources
+  └── Résultat  : 4 documents diversifiés
+        │
+        ▼
+ContextBuilder
+  ├── Déduplication  : similarité Jaccard
+  ├── Score qualité  : 0.0 → 1.0
+  ├── Confiance      : high / medium / low
+  └── Limite         : 5000 chars total
+        │
+        ▼
+PromptBuilder
+  ├── Template adaptatif selon confiance
+  ├── Instructions bilingues EN → FR
+  └── Règle : reformulation intelligente
+        │
+        ▼
+OpenRouter LLM
+  ├── Modèle    : mistralai/mistral-small-3.1-24b-instruct
+  ├── Fallback  : multi-modèles automatique
+  ├── Temp      : 0.2
+  └── Max tokens: 1024
+        │
+        ▼
+Réponse finale (français)
+  ├── Ancrée dans les documents
+  ├── Sources citées [Document N]
+  └── Score qualité affiché
 ```
 
-### 6. Réinitialiser l'environnement (si besoin)
+---
+
+## Structure du projet
+
+```
+rag-agent-system/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── main.py           # Point d'entrée FastAPI
+│   │   │   ├── deps.py           # Injection dépendances
+│   │   │   └── routes/
+│   │   │       └── health.py     # GET /api/v1/health
+│   │   ├── core/
+│   │   │   ├── config.py         # Constantes globales
+│   │   │   ├── settings.py       # Lecture .env (pydantic)
+│   │   │   └── logger.py         # Logging structuré
+│   │   ├── db/
+│   │   │   ├── chroma_client.py  # Connexion ChromaDB
+│   │   │   └── vector_store.py   # CRUD vectoriel
+│   │   ├── services/
+│   │   │   ├── embedding_service.py   # Embeddings + cache
+│   │   │   ├── retriever_service.py   # Retrieval + MMR
+│   │   │   ├── llm_service.py         # Génération LLM
+│   │   │   └── openrouter_client.py   # Client HTTP OpenRouter
+│   │   └── rag/
+│   │       ├── chain.py          # Pipeline RAG orchestré
+│   │       ├── prompts.py        # Templates bilingues EN→FR
+│   │       └── context.py        # Construction contexte
+│   └── run.py                    # Lancement uvicorn
+├── indexing/
+│   └── embeddings.py             # Chunking + indexation PDF
+├── data/
+│   ├── raw/                      # PDFs source (anglais)
+│   └── chromadb/                 # Index vectoriel persistant
+├── scripts/
+│   ├── ingest_documents.py       # Ingestion PDF → ChromaDB
+│   ├── test_chromadb.py          # Validation Phase 2
+│   ├── test_embeddings.py        # Validation Phase 3
+│   ├── test_retriever.py         # Validation Phase 4
+│   ├── test_llm.py               # Validation Phase 5
+│   ├── test_rag_pipeline.py      # Validation Phase 6
+│   └── test_rag_real.py          # Test documents réels
+├── config/
+│   ├── settings.yaml
+│   └── env.py
+├── .env                          # Variables d'environnement
+├── .env.example                  # Template .env
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## Documents supportés
+
+Placer les PDFs dans `data/raw/` :
+
+```
+data/raw/
+├── Climate-Development-Report-World Bank.pdf
+├── GDP-Prediction-using-Machine-Learning.pdf
+├── MADAGASCAR-URBANIZATION-REVIEW.pdf
+├── Rapports économiques(croissance-exportations-...).pdf
+└── Rapports économiques(indicateurs-finance-...).pdf
+```
+
+---
+
+## Ingestion des documents
+
+**À faire une seule fois (ou après ajout de nouveaux PDFs) :**
+
 ```bash
-deactivate
-rm -rf .venv
+pip install pypdf
+python scripts/ingest_documents.py --reset --chunk-size 500 --domain economics
+```
+
+Options disponibles :
+
+| Option | Défaut | Description |
+|---|---|---|
+| --reset | false | Vider ChromaDB avant ingestion |
+| --chunk-size | 500 | Taille des chunks en caractères |
+| --overlap | 50 | Chevauchement entre chunks |
+| --domain | economics | Domaine des documents |
+
+Résultat attendu :
+
+```
+[info] PDF loaded  file=Climate-Development-Report.pdf  pages=45
+[info] PDF processed  file=Climate-Development-Report.pdf  chunks=142
+[info] === Ingestion terminée ===  documents_indexed=1128
+```
+
+---
+
+## Ordre d'exécution des scripts
+
+```
+# Une seule fois — ingestion PDFs
+python scripts/ingest_documents.py --reset
+
+# Tests à répéter librement
+python scripts/test_rag_real.py
+python scripts/test_rag_pipeline.py
+python scripts/test_retriever.py
+python scripts/test_embeddings.py
+
+# ATTENTION — reset la collection ChromaDB
+# Ne pas lancer après ingestion des PDFs
+# python scripts/test_chromadb.py
+```
+
+---
+
+## Phase 2 — ChromaDB
+
+### Lancer le test ChromaDB
+
+```bash
+# ATTENTION : ce script resets la collection
+# Ne lancer qu'avant l'ingestion des vrais documents
+python scripts/test_chromadb.py
+```
+
+### Données persistées
+
+```
+data/chromadb/
+```
+
+Pour réinitialiser :
+
+```bash
+rm -rf data/chromadb/
+```
+
+---
+
+## Phase 3 — Embeddings
+
+### Modèle utilisé
+
+| Paramètre | Valeur |
+|---|---|
+| Provider | OpenRouter |
+| Modèle | openai/text-embedding-3-small |
+| Dimension | 1536 |
+| Cache | LRU en mémoire |
+| Fallback | Hash déterministe (sans clé) |
+
+### Lancer le test
+
+```bash
+python scripts/test_embeddings.py
+```
+
+---
+
+## Phase 4 — Retriever
+
+### Composants
+
+| Fichier | Rôle |
+|---|---|
+| retriever_service.py | Retrieval sémantique + MMR |
+| context.py | Construction contexte LLM |
+
+### Paramètres configurables (.env)
+
+```env
+RETRIEVAL_TOP_K=5
+RETRIEVAL_SCORE_THRESHOLD=0.0
+```
+
+### Lancer le test
+
+```bash
+python scripts/test_retriever.py
+```
+
+---
+
+## Phase 5 — LLM
+
+### Modèle LLM utilisé
+
+| Paramètre | Valeur |
+|---|---|
+| Provider | OpenRouter |
+| Modèle | mistralai/mistral-small-3.1-24b-instruct |
+| Endpoint | /chat/completions |
+| Timeout | 60 secondes |
+| Fallback | Multi-modèles automatique |
+
+### Lancer le test
+
+```bash
+python scripts/test_llm.py
+```
+
+### Changer de modèle LLM
+
+Modifier dans `backend/app/services/openrouter_client.py` :
+
+```python
+DEFAULT_LLM_MODEL = "openai/gpt-4o-mini"
+# ou
+DEFAULT_LLM_MODEL = "anthropic/claude-3-haiku"
+# ou
+DEFAULT_LLM_MODEL = "mistralai/mistral-small-3.1-24b-instruct"
+```
+
+---
+
+## Phase 6 — Pipeline RAG complet
+
+### Architecture
+
+```
+run_rag_pipeline(question)
+    ├── RetrieverService    → embed + ChromaDB + MMR
+    ├── ContextBuilder      → déduplication + qualité
+    ├── PromptBuilder       → template adaptatif EN→FR
+    └── LLMService          → OpenRouter
+```
+
+### Améliorations implémentées
+
+| Amélioration | Impact |
+|---|---|
+| Cache embeddings | Évite appels API redondants |
+| Cache requêtes | Réponse instantanée si même question |
+| MMR | Documents diversifiés |
+| Top-k adaptatif | Filtre automatique chunks peu pertinents |
+| Déduplication | Supprime fragments quasi-identiques |
+| Prompts adaptatifs | Instructions selon confiance (HIGH/MED/LOW) |
+| Score qualité | Métrique objective du retrieval |
+| Retry embeddings | Résilience aux erreurs réseau |
+
+### Lancer le test pipeline
+
+```bash
+python scripts/test_rag_pipeline.py
+```
+
+### Lancer le test documents réels
+
+```bash
+python scripts/test_rag_real.py
+```
+
+### Résultats Phase 6 — Documents réels
+
+| Question | Score | Confiance | Sources |
+|---|---|---|---|
+| Défis économiques Madagascar | 0.770 | HIGH | Rapports WB + Climate |
+| Changement climatique | 0.669 | MEDIUM | Climate Report x4 |
+| Indicateurs PIB | 0.585 | MEDIUM | GDP ML + Rapports |
+| Pauvreté pays développement | 0.678 | MEDIUM | Rapports WB x3 |
+| Urbanisation Madagascar | 0.828 | HIGH | URBANIZATION x4 |
+| **Moyenne** | **0.706** | | |
+
+### Comportement multilingue
+
+```
+Documents  : anglais (PDFs Banque Mondiale)
+Questions  : français (utilisateur)
+Réponses   : français (reformulation intelligente)
+```
+
+### Point d'entrée unique
+
+```python
+from backend.app.rag.chain import run_rag_pipeline
+
+result = run_rag_pipeline("Quels sont les défis économiques de Madagascar ?")
+print(result.answer)
+print(result.confidence_level)
+print(result.quality_score)
 ```
 
 ---
 
 ## Dépendances principales
 
-| Package           | Version  | Usage                  |
-|-------------------|----------|------------------------|
-| fastapi           | 0.115.0  | Framework API          |
-| uvicorn           | 0.29.0   | Serveur ASGI           |
-| pydantic          | 2.9.2    | Validation données     |
-| pydantic-settings | 2.5.2    | Gestion configuration  |
-| python-dotenv     | 1.0.1    | Chargement .env        |
-| structlog         | 24.4.0   | Logging structuré      |
-| chromadb          | 0.5.3    | Base vectorielle       |
-| httpx             | 0.27.0   | Client HTTP            |
-| PyYAML            | 6.0.2    | Lecture settings.yaml  |
+| Package | Version | Usage |
+|---|---|---|
+| fastapi | 0.115.0 | Framework API |
+| uvicorn | 0.29.0 | Serveur ASGI |
+| pydantic | 2.9.2 | Validation données |
+| pydantic-settings | 2.5.2 | Gestion configuration |
+| python-dotenv | 1.0.1 | Chargement .env |
+| structlog | 24.4.0 | Logging structuré |
+| chromadb | 0.5.23 | Base vectorielle |
+| httpx | 0.27.0 | Client HTTP |
+| PyYAML | 6.0.2 | Lecture settings.yaml |
+| pypdf | 4.2.0 | Extraction texte PDF |
+
+---
+
+## Phases de développement
+
+- [x] Phase 0  — Initialisation projet
+- [x] Phase 1  — Backend FastAPI minimal
+- [x] Phase 2  — ChromaDB (base vectorielle)
+- [x] Phase 3  — Embeddings (documents)
+- [x] Phase 4  — Retriever (RAG simple)
+- [x] Phase 5  — LLM (OpenRouter)
+- [x] Phase 6  — Pipeline RAG complet (documents réels EN→FR)
+- [ ] Phase 7  — Endpoint /chat
+- [ ] Phase 8  — Reranking
+- [ ] Phase 9  — Agent LangGraph
+- [ ] Phase 10 — Tools (Agent)
+- [ ] Phase 11 — Pipeline ingestion (Docling)
+- [ ] Phase 12 — Dagster (orchestration)
+- [ ] Phase 13 — OpenWebUI (interface)
+- [ ] Phase 14 — Tests automatisés
+- [ ] Phase 15 — Optimisation
+- [ ] Phase 16 — Production readiness
+
+---
+
+## Instructions d'exécution complètes
+
+```bash
+# 1. Créer l'environnement virtuel
+python -m venv .venv
+source .venv/bin/activate
+
+# 2. Installer les dépendances
+pip install -r requirements.txt
+
+# 3. Configurer .env
+cp .env.example .env
+# Editer .env et ajouter OPENROUTER_API_KEY
+
+# 4. Placer les PDFs dans data/raw/
+
+# 5. Ingérer les documents (une seule fois)
+python scripts/ingest_documents.py --reset
+
+# 6. Lancer l'API
+python backend/run.py
+
+# 7. Tester le pipeline RAG
+python scripts/test_rag_real.py
+
+# 8. Réinitialiser l'environnement si besoin
+deactivate
+rm -rf .venv
+```
+```
