@@ -237,22 +237,23 @@ Je ne peux pas répondre à cette question avec les informations disponibles.
 ## Phase 6 — Pipeline RAG complet
 
 ### Architecture
+```
 run_rag_pipeline(question)
-
-│
-├── RetrieverService.retrieve() 
-│       └── embed_text()          → OpenRouter embeddings
-│       └── VectorStore.search()  → ChromaDB
-│
-├── ContextBuilder.build() 		  → formatage
-│       └── format_document_block()
-│
-├── PromptBuilder.build_rag_prompt() → prompts.py
-│       └── prompts.py templates
-│
-└── LLMService.generate() → OpenRouter
-        └── OpenRouterClient.generate_completion()
-                └── OpenRouter /chat/completions
+        │
+        ├── RetrieverService.retrieve() 
+        │       └── embed_text()          → OpenRouter embeddings
+        │       └── VectorStore.search()  → ChromaDB
+        │
+        ├── ContextBuilder.build() 		  → formatage
+        │       └── format_document_block()
+        │
+        ├── PromptBuilder.build_rag_prompt() → prompts.py
+        │       └── prompts.py templates
+        │
+        └── LLMService.generate() → OpenRouter
+                └── OpenRouterClient.generate_completion()
+                        └── OpenRouter /chat/completions
+```
 
 ### Améliorations implémentées
 
