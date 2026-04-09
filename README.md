@@ -241,7 +241,6 @@ run_rag_pipeline(question)
 
 │
 ├── RetrieverService.retrieve() 
-
 │       └── embed_text()          → OpenRouter embeddings
 │       └── VectorStore.search()  → ChromaDB
 │
