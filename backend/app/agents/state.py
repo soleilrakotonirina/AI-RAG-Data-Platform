@@ -3,13 +3,14 @@ backend/app/agents/state.py
 
 Définition de l'état partagé du graphe LangGraph.
 L'état est le seul canal de communication entre les nodes.
-
 Chaque node :
 - lit des champs depuis l'état
 - retourne un dict partiel pour mettre à jour l'état
-
 Règle stricte : aucune variable globale entre nodes.
 Tout passe par AgentState.
+
+État partagé du graphe LangGraph — Phase 10.
+Ajout des champs tools.
 """
 
 from typing import Optional, TypedDict
@@ -20,7 +21,7 @@ class AgentState(TypedDict, total=False):
     """
     État partagé du graphe LangGraph.
 
-    Champs :
+    Champs Phase 9 (inchangés) :
         question          : Question originale de l'utilisateur
         needs_retrieval   : Décision du decision_node
         decision_reason   : Raison de la décision (pour logs)
@@ -34,7 +35,14 @@ class AgentState(TypedDict, total=False):
         steps_executed    : Liste des étapes exécutées (pour logs)
         model_used        : Modèle LLM utilisé
         total_duration_ms : Durée totale de traitement
+
+    Champs Phase 10 (nouveaux) :
+        needs_tool      : True si un tool doit être appelé
+        tool_name       : Nom du tool sélectionné
+        tool_input      : Input envoyé au tool
+        tool_output     : Output retourné par le tool
     """
+    # Phase 9 — inchangé
     question: str
     needs_retrieval: bool
     decision_reason: str
@@ -48,6 +56,12 @@ class AgentState(TypedDict, total=False):
     steps_executed: list[str]
     model_used: str
     total_duration_ms: float
+
+    # Phase 10 — tools
+    needs_tool: bool
+    tool_name: str
+    tool_input: dict
+    tool_output: dict
 
 
 def initial_state(question: str) -> AgentState:
@@ -74,4 +88,9 @@ def initial_state(question: str) -> AgentState:
         steps_executed=[],
         model_used="",
         total_duration_ms=0.0,
+        # Phase 10
+        needs_tool=False,
+        tool_name="",
+        tool_input={},
+        tool_output={},
     )

@@ -1,13 +1,7 @@
 """
 backend/app/agents/agent.py
 
-Point d'entrée principal de l'agent IA.
-Expose run_agent() pour usage depuis l'API et les scripts.
-
-Ce fichier :
-- Initialise le graphe LangGraph (une seule fois)
-- Expose run_agent(question) → AgentResult
-- Gère le timing et les métriques globales
+Point d'entrée de l'agent IA — Phase 10.
 """
 
 import time
@@ -19,31 +13,24 @@ from backend.app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Graphe compilé une seule fois (singleton)
 _agent_graph = None
 
 
 def _get_graph():
-    """Retourne le graphe compilé (singleton)."""
     global _agent_graph
     if _agent_graph is None:
         _agent_graph = build_agent_graph()
     return _agent_graph
 
 
-# ---------------------------------------------------------------------------
-# Types de retour
-# ---------------------------------------------------------------------------
-
 @dataclass
 class AgentResult:
-    """
-    Résultat structuré de l'agent IA.
-    Compatible avec le format de réponse de l'API /chat.
-    """
+    """Résultat structuré de l'agent IA — Phase 10."""
     question: str
     answer: str
     needs_retrieval: bool
+    needs_tool: bool
+    tool_name: str
     decision_reason: str
     context_used: bool
     context_text: str
@@ -54,14 +41,17 @@ class AgentResult:
     steps_executed: list[str]
     total_duration_ms: float
     error: str = None
+    tool_output: dict = field(default_factory=dict)
 
     def format_full(self) -> str:
-        """Formate le résultat pour affichage/debug."""
+        path = "TOOL" if self.needs_tool else \
+               "RETRIEVAL" if self.needs_retrieval else "DIRECT LLM"
         lines = [
             "=" * 60,
             f"QUESTION     : {self.question}",
-            f"DÉCISION     : {'RETRIEVAL' if self.needs_retrieval else 'DIRECT LLM'}",
+            f"CHEMIN       : {path}",
             f"RAISON       : {self.decision_reason}",
+            f"TOOL         : {self.tool_name or 'aucun'}",
             f"CONFIANCE    : {self.confidence_level}",
             f"QUALITÉ      : {self.quality_score:.3f}",
             f"DURÉE        : {self.total_duration_ms:.0f}ms",
@@ -78,54 +68,41 @@ class AgentResult:
         return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Point d'entrée principal
-# ---------------------------------------------------------------------------
-
 def run_agent(question: str) -> AgentResult:
     """
-    Exécute l'agent IA pour une question donnée.
+    Exécute l'agent IA Phase 10.
 
-    Flux :
-    1. Initialisation de l'état
-    2. Exécution du graphe LangGraph
-    3. Extraction du résultat depuis l'état final
-    4. Retour de AgentResult structuré
+    Chemins possibles :
+    - Tool path    : données dynamiques
+    - Retrieval path : documents ChromaDB
+    - Direct path  : LLM seul
 
     Args:
-        question: Question en langage naturel (français)
+        question: Question en français
 
     Returns:
-        AgentResult avec réponse, décision et métriques
-
-    Raises:
-        ValueError: Si la question est vide
+        AgentResult structuré
     """
     if not question or not question.strip():
         raise ValueError("La question ne peut pas être vide.")
 
     start_time = time.time()
 
-    logger.info(
-        "Agent started",
-        question=question[:80],
-    )
+    logger.info("Agent started (Phase 10)", question=question[:80])
 
-    # Initialisation de l'état
     state = initial_state(question.strip())
 
     try:
-        # Exécution du graphe LangGraph
         graph = _get_graph()
         final_state: AgentState = graph.invoke(state)
-
         total_duration_ms = (time.time() - start_time) * 1000
 
-        # Extraction des résultats
         result = AgentResult(
             question=question,
             answer=final_state.get("answer", ""),
             needs_retrieval=final_state.get("needs_retrieval", False),
+            needs_tool=final_state.get("needs_tool", False),
+            tool_name=final_state.get("tool_name", ""),
             decision_reason=final_state.get("decision_reason", ""),
             context_used=bool(final_state.get("context_text", "")),
             context_text=final_state.get("context_text", ""),
@@ -136,34 +113,28 @@ def run_agent(question: str) -> AgentResult:
             steps_executed=final_state.get("steps_executed", []),
             total_duration_ms=total_duration_ms,
             error=final_state.get("error"),
+            tool_output=final_state.get("tool_output", {}),
         )
 
         logger.info(
             "Agent completed",
-            question=question[:60],
-            needs_retrieval=result.needs_retrieval,
-            decision_reason=result.decision_reason,
-            context_used=result.context_used,
-            confidence_level=result.confidence_level,
-            answer_length=len(result.answer),
+            path="tool" if result.needs_tool else
+                 "retrieval" if result.needs_retrieval else "direct",
             steps=result.steps_executed,
-            total_duration_ms=round(total_duration_ms),
+            duration_ms=round(total_duration_ms),
         )
 
         return result
 
     except Exception as e:
         total_duration_ms = (time.time() - start_time) * 1000
-        logger.error(
-            "Agent failed",
-            question=question[:60],
-            error=str(e),
-            error_type=type(e).__name__,
-        )
+        logger.error("Agent failed", error=str(e))
         return AgentResult(
             question=question,
             answer="Une erreur est survenue dans le pipeline agent.",
             needs_retrieval=False,
+            needs_tool=False,
+            tool_name="",
             decision_reason="",
             context_used=False,
             context_text="",

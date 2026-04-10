@@ -1,4 +1,4 @@
-## README.md — Mise à jour complète Phase 8
+## README.md — Mise à jour complète Phase 10
 
 ```markdown
 # RAG Agent System
@@ -688,6 +688,72 @@ print(result.steps_executed)
 | "Défis économiques Madagascar ?" | OUI | decision → retriever → reranker → llm |
 
 ---
+# Phase 10 — Tools (Agent capable d'agir)
+
+## Architecture agent complète
+```
+START
+  │
+  ▼
+decision_node
+  │
+  ├── needs_tool=True
+  │     → tool_node → llm_node → END
+  │
+  ├── needs_retrieval=True
+  │     → retriever_node → reranker_node → llm_node → END
+  │
+  └──direct
+        →llm_node→END                                                             
+```
+## Tools disponibles
+
+| Tool | Rôle | Déclencheur |
+|---|---|---|
+| search_tool | Données économiques dynamiques | "actuel", "aujourd'hui", "2025" |
+| api_tool | Statut système / ChromaDB | "statut", "pipeline", "collection" |
+
+## Implementation Plan
+```
+Fichiers créés/modifiés :
+├── backend/app/agents/tools/
+│   ├── __init__.py                 ← NOUVEAU
+│   ├── search_tool.py              ← NOUVEAU
+│   └── api_tool.py                 ← NOUVEAU
+├── backend/app/agents/nodes/
+│   └── tool_node.py                ← NOUVEAU
+├── backend/app/agents/state.py     ← MODIFIÉ (champs tools)
+├── backend/app/agents/nodes/
+│   └── decision_node.py            ← MODIFIÉ (3 chemins)
+├── backend/app/agents/nodes/
+│   └── llm_node.py                 ← MODIFIÉ (tool_output)
+└── backend/app/agents/graph.py     ← MODIFIÉ (nouveau edge)
+```
+
+## Tester les tools
+
+```bash
+python scripts/test_tools.py
+```
+
+## Utilisation directe
+
+```python
+from backend.app.agents.agent import run_agent
+
+# Chemin tool
+r = run_agent("Données économiques actuelles de Madagascar")
+print(r.needs_tool, r.tool_name)
+
+# Chemin retrieval
+r = run_agent("Défis économiques Madagascar selon les rapports ?")
+print(r.needs_retrieval, r.document_count)
+
+# Chemin direct
+r = run_agent("Qu'est-ce que FastAPI ?")
+print(r.needs_retrieval, r.needs_tool)
+``` 
+---
 
 
 ## Dépendances principales
@@ -719,7 +785,7 @@ print(result.steps_executed)
 - [x] Phase 7  — Endpoint /chat
 - [x] Phase 8  — Reranking
 - [x] Phase 9  — Agent IA LangGraph
-- [ ] Phase 10 — Tools (Agent)
+- [x] Phase 10 — Tools (Agent)
 - [ ] Phase 11 — Pipeline ingestion (Docling)
 - [ ] Phase 12 — Dagster (orchestration)
 - [ ] Phase 13 — OpenWebUI (interface)
@@ -767,7 +833,10 @@ python scripts/test_reranking.py
 # 10. Tester l'agent LangGraph
 python scripts/test_agent.py
 
-# 11. Réinitialiser l'environnement si besoin
+# 11. Tester les tools
+python scripts/test_tools.py
+
+# 12. Réinitialiser l'environnement si besoin
 deactivate
 rm -rf .venv
 ```

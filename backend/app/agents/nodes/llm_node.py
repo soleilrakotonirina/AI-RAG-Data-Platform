@@ -1,13 +1,11 @@
 """
 backend/app/agents/nodes/llm_node.py
 
-Node LLM : génère la réponse finale.
-
-Deux cas :
-- Cas 1 : avec contexte (documents rerankés disponibles)
-- Cas 2 : sans contexte (question générale, pas de retrieval)
-
-Réutilise ContextBuilder et PromptBuilder de Phase 6.
+Node LLM — Phase 10.
+Trois cas de génération :
+1. Avec tool_output (données dynamiques)
+2. Avec contexte RAG (documents rerankés)
+3. Sans contexte (question générale)
 """
 
 from backend.app.agents.state import AgentState
@@ -23,18 +21,36 @@ _context_builder = ContextBuilder(max_chars_per_doc=700, max_total_chars=4000)
 _prompt_builder = PromptBuilder()
 _llm_client = OpenRouterClient()
 
+# Prompt pour intégration tool_output
+TOOL_SYSTEM_PROMPT = """Tu es un assistant expert qui répond en français.
+
+Tu as accès à des données fraîches récupérées dynamiquement.
+Utilise ces données comme source principale pour ta réponse.
+Reformule intelligemment en français — ne traduis pas mot-à-mot.
+Si les données sont insuffisantes, dis-le clairement."""
+
+TOOL_USER_TEMPLATE = """Données récupérées dynamiquement :
+{tool_data}
+
+Question : {question}
+
+Instructions :
+- Réponds uniquement en français
+- Utilise les données ci-dessus comme source principale
+- Indique la source des données ([Source: ...])
+- Sois précis et structuré
+
+Réponse en français :"""
+
 
 def llm_node(state: AgentState) -> AgentState:
     """
-    Génère la réponse finale à partir du contexte disponible.
+    Génère la réponse finale.
 
-    Lit depuis l'état  : question, reranked_documents (si disponibles)
-    Écrit dans l'état  : answer, context_text, confidence_level, quality_score
-
-    Cas 1 — avec contexte :
-        reranked_documents → ContextBuilder → PromptBuilder (RAG) → LLM
-    Cas 2 — sans contexte :
-        PromptBuilder (no_context) → LLM
+    Trois cas selon l'état :
+    1. tool_output présent et success → réponse basée sur tool
+    2. reranked_documents présents → réponse RAG
+    3. Ni l'un ni l'autre → réponse LLM directe
 
     Args:
         state: État courant du graphe
@@ -44,20 +60,40 @@ def llm_node(state: AgentState) -> AgentState:
     """
     question = state["question"]
     reranked_docs = state.get("reranked_documents", [])
+    tool_output = state.get("tool_output", {})
     steps = state.get("steps_executed", [])
 
     logger.info(
         "LLM node started",
         question=question[:80],
+        has_tool_output=bool(tool_output and tool_output.get("success")),
         has_documents=len(reranked_docs) > 0,
-        document_count=len(reranked_docs),
     )
 
     try:
         # ------------------------------------------------------------------
-        # Cas 1 : avec contexte documentaire
+        # Cas 1 : Tool output disponible
         # ------------------------------------------------------------------
-        if reranked_docs:
+        if tool_output and tool_output.get("success") and tool_output.get("results"):
+            answer = _generate_with_tool(question, tool_output)
+            steps.append("llm_node:tool_response")
+
+            logger.info("LLM node completed (tool output)", answer_length=len(answer))
+
+            return {
+                **state,
+                "answer": answer,
+                "context_text": str(tool_output),
+                "confidence_level": "medium",
+                "quality_score": 0.6,
+                "model_used": _llm_client._model,
+                "steps_executed": steps,
+            }
+
+        # ------------------------------------------------------------------
+        # Cas 2 : Contexte RAG disponible
+        # ------------------------------------------------------------------
+        elif reranked_docs:
             mock_retrieval = RetrievalResult(
                 query=question,
                 documents=reranked_docs,
@@ -79,14 +115,12 @@ def llm_node(state: AgentState) -> AgentState:
                 max_tokens=1024,
             )
 
-            steps.append(f"llm_node:rag_response(confidence={context.confidence_level})")
+            steps.append(f"llm_node:rag_response(conf={context.confidence_level})")
 
             logger.info(
-                "LLM node completed (with context)",
+                "LLM node completed (RAG context)",
                 answer_length=len(answer),
                 confidence_level=context.confidence_level,
-                quality_score=round(context.quality_score, 3),
-                document_count=context.document_count,
             )
 
             return {
@@ -100,7 +134,7 @@ def llm_node(state: AgentState) -> AgentState:
             }
 
         # ------------------------------------------------------------------
-        # Cas 2 : sans contexte (question générale)
+        # Cas 3 : LLM direct
         # ------------------------------------------------------------------
         else:
             prompt = _prompt_builder.build_comparison_prompt(question=question)
@@ -113,10 +147,7 @@ def llm_node(state: AgentState) -> AgentState:
 
             steps.append("llm_node:direct_response")
 
-            logger.info(
-                "LLM node completed (no context)",
-                answer_length=len(answer),
-            )
+            logger.info("LLM node completed (direct)", answer_length=len(answer))
 
             return {
                 **state,
@@ -130,10 +161,57 @@ def llm_node(state: AgentState) -> AgentState:
 
     except Exception as e:
         logger.error("LLM node failed", error=str(e))
-        steps.append(f"llm_node:error")
+        steps.append("llm_node:error")
         return {
             **state,
-            "answer": "Une erreur est survenue lors de la génération de la réponse.",
+            "answer": "Une erreur est survenue lors de la génération.",
             "error": str(e),
             "steps_executed": steps,
         }
+
+
+def _generate_with_tool(question: str, tool_output: dict) -> str:
+    """
+    Génère une réponse en se basant sur le tool_output.
+
+    Args:
+        question: Question de l'utilisateur
+        tool_output: Résultat du tool
+
+    Returns:
+        Réponse générée en français
+    """
+    # Formatage des résultats du tool
+    results = tool_output.get("results", [])
+    source = tool_output.get("source", "source externe")
+
+    tool_data_lines = []
+    for i, result in enumerate(results, 1):
+        title = result.get("title", f"Résultat {i}")
+        content = result.get("content", "")
+        src = result.get("source", source)
+        date = result.get("date", "")
+        tool_data_lines.append(
+            f"[{i}] {title}\n"
+            f"    Données : {content}\n"
+            f"    Source : {src} ({date})"
+        )
+
+    tool_data = "\n\n".join(tool_data_lines) if tool_data_lines else str(tool_output)
+
+    messages = [
+        {"role": "system", "content": TOOL_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": TOOL_USER_TEMPLATE.format(
+                tool_data=tool_data,
+                question=question,
+            ),
+        },
+    ]
+
+    return _llm_client.generate_completion(
+        messages=messages,
+        temperature=0.2,
+        max_tokens=1024,
+    )

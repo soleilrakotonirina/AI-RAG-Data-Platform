@@ -481,6 +481,68 @@ print(result.steps_executed)
 | "Défis économiques Madagascar ?" | OUI | decision → retriever → reranker → llm |
 
 ---
+# Phase 10 — Tools (Agent capable d'agir)
+
+## Concept Explanation
+```
+AGENT PHASE 9 (sans tools) :
+Question → decision → [RAG] → LLM → Réponse
+                       ↑
+              Base fixe (1128 docs)
+
+AGENT PHASE 10 (avec tools) :
+Question → decision → [RAG]          → LLM → Réponse
+                    → [search_tool]  → LLM → Réponse
+                    → [api_tool]     → LLM → Réponse
+                    → [LLM direct]        → Réponse
+```
+## Architecture agent complète
+```
+START
+  │
+  ▼
+decision_node
+  │
+  ├── needs_tool=True
+  │     → tool_node → llm_node → END
+  │
+  ├── needs_retrieval=True
+  │     → retriever_node → reranker_node → llm_node → END
+  │
+  └──direct
+        →llm_node→END                                                             
+```
+## Tools disponibles
+
+| Tool | Rôle | Déclencheur |
+|---|---|---|
+| search_tool | Données économiques dynamiques | "actuel", "aujourd'hui", "2025" |
+| api_tool | Statut système / ChromaDB | "statut", "pipeline", "collection" |
+
+## Tester les tools
+
+```bash
+python scripts/test_tools.py
+```
+
+## Utilisation directe
+
+```python
+from backend.app.agents.agent import run_agent
+
+# Chemin tool
+r = run_agent("Données économiques actuelles de Madagascar")
+print(r.needs_tool, r.tool_name)
+
+# Chemin retrieval
+r = run_agent("Défis économiques Madagascar selon les rapports ?")
+print(r.needs_retrieval, r.document_count)
+
+# Chemin direct
+r = run_agent("Qu'est-ce que FastAPI ?")
+print(r.needs_retrieval, r.needs_tool)
+``` 
+---
 
 ## Sans clé OpenRouter
 

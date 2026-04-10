@@ -1,18 +1,16 @@
 """
 backend/app/agents/nodes/decision_node.py
 
-Node de décision : détermine si la question nécessite un retrieval.
+Node de décision — Phase 10.
 
-Stratégie de décision en deux niveaux :
-1. Règles lexicales rapides (mots-clés → pas de retrieval)
-2. LLM décisionnel si ambigu (appel léger à OpenRouter)
+Décide maintenant entre TROIS chemins :
 
-Exemples :
-- "Qu'est-ce que FastAPI ?" → needs_retrieval=False (connaissance générale)
-- "Que disent les rapports sur Madagascar ?" → needs_retrieval=True
-- "Quel est le taux de pauvreté selon les données ?" → needs_retrieval=True
+1. Retrieval (documents indexés)
+2. Tool (données dynamiques/actuelles)
+3. LLM direct (question générale)
 """
 
+import re
 import httpx
 from backend.app.agents.state import AgentState
 from backend.app.core.settings import get_settings
@@ -21,145 +19,196 @@ from backend.app.core.logger import get_logger
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Mots-clés indiquant qu'un retrieval est nécessaire
+# Mots-clés de classification
 # ---------------------------------------------------------------------------
 
-RETRIEVAL_KEYWORDS = [
-    # Références explicites aux documents
-    "rapport", "rapports", "document", "données", "étude",
-    "selon", "d'après", "source", "analyse", "statistique",
-    # Contexte Madagascar / économie
-    "madagascar", "malgache", "pib", "croissance", "pauvreté",
-    "exportation", "urbanisation", "inflation", "économie",
-    # Contexte climat
-    "climatique", "climat", "température", "carbone", "émission",
-    # Questions de recherche
-    "quelle est la situation", "quels sont les chiffres",
-    "combien", "quel pourcentage", "quelle proportion",
-    "comment évolue", "quels facteurs",
-    # Références temporelles précises
-    "en 2020", "en 2021", "en 2022", "en 2023", "en 2024",
+# Chemin : Tool (données dynamiques)
+TOOL_KEYWORDS = [
+    "actuel", "actuels", "actuelle", "actuelles", "actuellement", "aujourd'hui", "maintenant",
+    "dernières données", "données récentes", "mise à jour",
+    "latest", "current",
+    "statistiques actuelles", "chiffres récents",
+    "en ce moment", "2025", "2026",
+    "combien sont", "quel est le taux actuel",
+    "statut", "état du système", "pipeline status",
 ]
 
-# Mots-clés indiquant une question générale (pas de retrieval)
+# Chemin : Retrieval (documents indexés)
+RETRIEVAL_KEYWORDS = [
+    "rapport", "rapports", "document", "étude", "analyse",
+    "selon", "d'après", "source", "données historiques",
+    "madagascar", "malgache", "pib", "croissance", "pauvreté",
+    "exportation", "urbanisation", "inflation", "économie",
+    "climatique", "climat", "température", "carbone", "émission",
+    "banque mondiale", "world bank", "fmi",
+    "quelle est la situation", "quels sont les chiffres",
+]
+
+# Chemin : LLM direct (questions générales)
 NO_RETRIEVAL_KEYWORDS = [
     "qu'est-ce que", "c'est quoi", "définition", "explique",
     "comment fonctionne", "à quoi sert", "différence entre",
-    "bonjour", "merci", "aide", "aide-moi",
+    "bonjour", "merci", "aide-moi",
 ]
 
-# Prompt de décision LLM (utilisé si règles ambiguës)
-DECISION_PROMPT = """Tu es un assistant expert en classification de questions.
+# Prompt de décision LLM
+DECISION_PROMPT = """Tu es un classificateur de questions.
 
 Question : {question}
 
-Cette question nécessite-t-elle une recherche dans une base documentaire
-contenant des rapports économiques sur Madagascar, le changement climatique
-et le développement ?
+Classe cette question dans l'une des trois catégories :
+- RETRIEVAL : question sur des faits dans des rapports/documents indexés
+- TOOL : question nécessitant des données actuelles ou dynamiques
+- DIRECT : question générale ne nécessitant pas de source externe
 
-Réponds UNIQUEMENT par :
-- OUI si la question porte sur des faits spécifiques, statistiques, données, rapports
-- NON si la question est générale, conceptuelle ou ne nécessite pas de données
+Exemples :
+- "Qu'est-ce que FastAPI ?" → DIRECT
+- "Défis économiques Madagascar ?" → RETRIEVAL
+- "Données économiques actuelles ?" → TOOL
 
-Réponse (OUI ou NON) :"""
+Réponds UNIQUEMENT par : RETRIEVAL, TOOL ou DIRECT
+
+Réponse :"""
+
+
+# ---------------------------------------------------------------------------
+# Utilitaire — correspondance par mots entiers
+# ---------------------------------------------------------------------------
+
+def _keyword_match(keyword: str, text: str) -> bool:
+    """
+    Vérifie si un mot-clé apparaît dans le texte comme mot entier
+    ou comme expression complète.
+
+    Évite les faux positifs :
+    - "api" ne matche PAS "fastapi"
+    - "api" matche "appel api" ou "via api"
+
+    Args:
+        keyword: Mot-clé à chercher
+        text: Texte en minuscules
+
+    Returns:
+        True si le mot-clé est présent comme mot/expression entier(e)
+    """
+    # Pour les expressions multi-mots, recherche directe
+    if " " in keyword:
+        return keyword in text
+
+    # Pour les mots simples, correspondance par frontière de mot
+    pattern = r'\b' + re.escape(keyword) + r'\b'
+    return bool(re.search(pattern, text))
 
 
 def decision_node(state: AgentState) -> AgentState:
     """
-    Analyse la question et décide si un retrieval est nécessaire.
+    Analyse la question et décide du chemin d'exécution.
+
+    Trois chemins :
+    - needs_tool=True       : données dynamiques (search_tool / api_tool)
+    - needs_retrieval=True  : documents indexés (ChromaDB)
+    - direct                : LLM seul
 
     Stratégie :
-    1. Vérifier les mots-clés NO_RETRIEVAL (→ False immédiatement)
-    2. Vérifier les mots-clés RETRIEVAL (→ True immédiatement)
-    3. Si ambigu → appel LLM léger pour décider
+    1. Mots-clés TOOL (mots entiers) → chemin tool
+    2. Mots-clés NO_RETRIEVAL → chemin direct
+    3. Mots-clés RETRIEVAL → chemin retrieval
+    4. Ambigu → LLM classificateur
 
     Args:
-        state: État courant du graphe
+        state: État courant
 
     Returns:
-        État mis à jour avec needs_retrieval et decision_reason
+        État mis à jour avec chemin décidé
     """
     question = state["question"]
     question_lower = question.lower()
+    steps = state.get("steps_executed", [])
 
-    logger.info(
-        "Decision node started",
-        question=question[:80],
-    )
+    logger.info("Decision node started", question=question[:80])
 
-    # Étape 1 : Vérifier mots-clés "pas de retrieval"
-    for keyword in NO_RETRIEVAL_KEYWORDS:
-        if keyword in question_lower:
-            # Vérifier qu'il n'y a pas de sur-qualification
-            has_retrieval_kw = any(
-                kw in question_lower for kw in RETRIEVAL_KEYWORDS
-            )
-            if not has_retrieval_kw:
-                reason = f"Question générale détectée (mot-clé: '{keyword}')"
-                logger.info(
-                    "Decision: NO retrieval (lexical rule)",
-                    reason=reason,
-                )
-                steps = state.get("steps_executed", [])
-                steps.append("decision_node:no_retrieval_lexical")
-                return {
-                    **state,
-                    "needs_retrieval": False,
-                    "decision_reason": reason,
-                    "steps_executed": steps,
-                }
-
-    # Étape 2 : Vérifier mots-clés "retrieval nécessaire"
-    matched_keywords = [
-        kw for kw in RETRIEVAL_KEYWORDS if kw in question_lower
+    # Étape 1 : Mots-clés TOOL (correspondance mots entiers)
+    matched_tool_kw = [
+        kw for kw in TOOL_KEYWORDS
+        if _keyword_match(kw, question_lower)
     ]
-    if matched_keywords:
-        reason = f"Mots-clés de recherche détectés : {matched_keywords[:3]}"
-        logger.info(
-            "Decision: YES retrieval (lexical rule)",
-            matched_keywords=matched_keywords[:3],
-        )
-        steps = state.get("steps_executed", [])
-        steps.append("decision_node:retrieval_lexical")
+    if matched_tool_kw:
+        reason = f"Données actuelles/dynamiques : {matched_tool_kw[:2]}"
+        steps.append("decision_node:tool_lexical")
+        logger.info("Decision: TOOL (lexical)", matched=matched_tool_kw[:2])
         return {
             **state,
-            "needs_retrieval": True,
+            "needs_retrieval": False,
+            "needs_tool": True,
+            "tool_name": _select_tool(question_lower),
             "decision_reason": reason,
             "steps_executed": steps,
         }
 
-    # Étape 3 : Ambigu → LLM décisionnel
-    logger.info("Decision: ambiguous — calling LLM for decision")
-    needs_retrieval, reason = _llm_decision(question)
+    # Étape 2 : Mots-clés NO_RETRIEVAL
+    matched_no_ret = [
+        kw for kw in NO_RETRIEVAL_KEYWORDS
+        if _keyword_match(kw, question_lower)
+    ]
+    if matched_no_ret:
+        has_ret_kw = any(
+            _keyword_match(kw, question_lower)
+            for kw in RETRIEVAL_KEYWORDS
+        )
+        if not has_ret_kw:
+            reason = f"Question générale : '{matched_no_ret[0]}'"
+            steps.append("decision_node:direct_lexical")
+            logger.info("Decision: DIRECT (lexical)", keyword=matched_no_ret[0])
+            return {
+                **state,
+                "needs_retrieval": False,
+                "needs_tool": False,
+                "decision_reason": reason,
+                "steps_executed": steps,
+            }
 
-    steps = state.get("steps_executed", [])
-    steps.append(f"decision_node:llm_decision({'yes' if needs_retrieval else 'no'})")
+    # Étape 3 : Mots-clés RETRIEVAL
+    matched_ret_kw = [
+        kw for kw in RETRIEVAL_KEYWORDS
+        if _keyword_match(kw, question_lower)
+    ]
+    if matched_ret_kw:
+        reason = f"Documents indexés pertinents : {matched_ret_kw[:2]}"
+        steps.append("decision_node:retrieval_lexical")
+        logger.info("Decision: RETRIEVAL (lexical)", matched=matched_ret_kw[:2])
+        return {
+            **state,
+            "needs_retrieval": True,
+            "needs_tool": False,
+            "decision_reason": reason,
+            "steps_executed": steps,
+        }
 
-    logger.info(
-        "Decision completed",
-        needs_retrieval=needs_retrieval,
-        reason=reason,
-    )
+    # Étape 4 : LLM classificateur
+    logger.info("Decision: ambiguous — calling LLM classifier")
+    path, reason = _llm_decision(question)
+    steps.append(f"decision_node:llm_decision({path})")
 
     return {
         **state,
-        "needs_retrieval": needs_retrieval,
+        "needs_retrieval": path == "retrieval",
+        "needs_tool": path == "tool",
+        "tool_name": _select_tool(question_lower) if path == "tool" else "",
         "decision_reason": reason,
         "steps_executed": steps,
     }
 
 
-def _llm_decision(question: str) -> tuple[bool, str]:
-    """
-    Utilise le LLM pour décider si un retrieval est nécessaire.
-    Appel léger (max_tokens=5, temperature=0).
+def _select_tool(question_lower: str) -> str:
+    """Sélectionne le tool approprié selon la question."""
+    api_keywords = ["statut", "pipeline", "système", "collection", "base de données"]
+    if any(_keyword_match(kw, question_lower) for kw in api_keywords):
+        return "api_tool"
+    return "search_tool"
 
-    Args:
-        question: Question à analyser
 
-    Returns:
-        Tuple (needs_retrieval, reason)
-    """
+def _llm_decision(question: str) -> tuple[str, str]:
+    """Utilise le LLM pour classer la question."""
     settings = get_settings()
 
     try:
@@ -178,20 +227,20 @@ def _llm_decision(question: str) -> tuple[bool, str]:
                     }
                 ],
                 "temperature": 0.0,
-                "max_tokens": 5,
+                "max_tokens": 10,
             },
             timeout=15.0,
         )
         response.raise_for_status()
         raw = response.json()["choices"][0]["message"]["content"].strip().upper()
 
-        needs_retrieval = "OUI" in raw
-        reason = f"Décision LLM : {'OUI' if needs_retrieval else 'NON'} (réponse: {raw})"
-        return needs_retrieval, reason
+        if "TOOL" in raw:
+            return "tool", f"Classificateur LLM → TOOL (réponse: {raw})"
+        elif "RETRIEVAL" in raw:
+            return "retrieval", f"Classificateur LLM → RETRIEVAL (réponse: {raw})"
+        else:
+            return "direct", f"Classificateur LLM → DIRECT (réponse: {raw})"
 
     except Exception as e:
-        logger.warning(
-            "LLM decision failed — defaulting to retrieval",
-            error=str(e),
-        )
-        return True, f"Fallback → retrieval par défaut (erreur LLM: {type(e).__name__})"
+        logger.warning("LLM decision failed — defaulting to retrieval", error=str(e))
+        return "retrieval", f"Fallback → retrieval (erreur: {type(e).__name__})"
