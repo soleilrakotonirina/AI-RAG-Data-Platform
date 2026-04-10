@@ -632,7 +632,7 @@ pipeline = RAGPipeline(
 - [x] Phase 5  — LLM (OpenRouter)
 - [x] Phase 6  — Pipeline RAG complet (documents réels EN→FR)
 - [x] Phase 7  — Endpoint /chat
-- [ ] Phase 8  — Reranking
+- [x] Phase 8  — Reranking
 - [ ] Phase 9  — Agent LangGraph
 - [ ] Phase 10 — Tools (Agent)
 - [ ] Phase 11 — Pipeline ingestion (Docling)
@@ -669,7 +669,16 @@ python backend/run.py
 # 7. Tester le pipeline RAG
 python scripts/test_rag_real.py
 
-# 8. Réinitialiser l'environnement si besoin
+# 8. ReLancer l'API
+python backend/run.py
+
+# 8. Tester l'endpoint /chat
+python scripts/test_api_chat.py
+
+# 9. Tester le reranking
+python scripts/test_reranking.py
+
+# 10. Réinitialiser l'environnement si besoin
 deactivate
 rm -rf .venv
 ```
