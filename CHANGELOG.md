@@ -1,4 +1,4 @@
-## README.md — Mise à jour complète Phase 6
+## README.md — Mise à jour complète Phase 7
 
 ```markdown
 # RAG Agent System
@@ -598,7 +598,13 @@ python backend/run.py
 # 7. Tester le pipeline RAG
 python scripts/test_rag_real.py
 
-# 8. Réinitialiser l'environnement si besoin
+# 8. ReLancer l'API
+python backend/run.py
+
+# 8. Tester l'endpoint /chat
+python scripts/test_api_chat.py
+
+# 9. Réinitialiser l'environnement si besoin
 deactivate
 rm -rf .venv
 ```
