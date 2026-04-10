@@ -604,6 +604,91 @@ pipeline = RAGPipeline(
 - Fallback automatique si reranker indisponible
 
 ---
+# Phase 9 — Agent IA (LangGraph)
+
+```
+PIPELINE STATIQUE (Phases 6-8) :
+Question → Retrieval → Reranking → Context → LLM → Réponse
+           TOUJOURS    TOUJOURS
+
+AGENT IA (Phase 9) :
+Question → Decision Node
+               │
+               ├── besoin documents ?
+               │        OUI → Retrieval → Reranking → LLM → Réponse
+               │        NON → LLM direct → Réponse
+               │
+               └── logique extensible (Phase 10 : tools)
+```
+## Architecture agent
+
+```
+START
+  │
+  ▼
+decision_node
+  ├── needs_retrieval=True → retriever_node → reranker_node → llm_node → END
+  │
+  │
+  └── needs_retrieval=False → llm_node → END 
+```
+## Installation LangGraph
+Ajouter à requirements.txt :
+
+```
+langgraph==0.2.28
+``` 
+##  Implementation Plan
+```
+backend/app/agents/
+├── __init__.py
+├── state.py              # État partagé TypedDict
+├── graph.py              # Définition du graphe LangGraph
+├── agent.py              # Point d'entrée run_agent()
+└── nodes/
+    ├── __init__.py
+    ├── decision_node.py  # Décide si retrieval nécessaire
+    ├── retriever_node.py # Appelle RetrieverService
+    ├── reranker_node.py  # Appelle RerankerService
+    └── llm_node.py       # Génère la réponse finale
+```                                                                                      
+## Tester l'agent
+
+```bash
+pip install langgraph==0.2.28
+python scripts/test_agent.py
+```
+````
+ [] Cas 1 : needs_retrieval=False pour question générale
+ [] Cas 2 : needs_retrieval=True pour question documentaire
+ [] Cas 1 : steps ne contiennent PAS retriever_node
+ [] Cas 2 : steps contiennent retriever_node, reranker_node, llm_node
+ [] Réponses en français dans tous les cas
+ [] context_used=True quand retrieval activé
+ [] document_count > 0 quand retrieval activé
+ [] erreur LangGraph
+````
+
+## Utilisation directe
+
+```python
+from backend.app.agents.agent import run_agent
+
+result = run_agent("Quels sont les défis économiques de Madagascar ?")
+print(result.answer)
+print(result.needs_retrieval)
+print(result.steps_executed)
+```
+
+### Comportement
+
+| Question | Décision | Flux |
+|---|---|---|
+| "Qu'est-ce que FastAPI ?" | NON | decision → llm |
+| "Défis économiques Madagascar ?" | OUI | decision → retriever → reranker → llm |
+
+---
+
 
 ## Dépendances principales
 
@@ -632,8 +717,8 @@ pipeline = RAGPipeline(
 - [x] Phase 5  — LLM (OpenRouter)
 - [x] Phase 6  — Pipeline RAG complet (documents réels EN→FR)
 - [x] Phase 7  — Endpoint /chat
-- [ ] Phase 8  — Reranking
-- [ ] Phase 9  — Agent LangGraph
+- [x] Phase 8  — Reranking
+- [x] Phase 9  — Agent IA LangGraph
 - [ ] Phase 10 — Tools (Agent)
 - [ ] Phase 11 — Pipeline ingestion (Docling)
 - [ ] Phase 12 — Dagster (orchestration)
@@ -669,8 +754,20 @@ python backend/run.py
 # 7. Tester le pipeline RAG
 python scripts/test_rag_real.py
 
-# 8. Réinitialiser l'environnement si besoin
+# 8. ReLancer l'API
+python backend/run.py
+
+# 8. Tester l'endpoint /chat
+python scripts/test_api_chat.py
+
+# 9. Tester le reranking
+python scripts/test_reranking.py
+
+
+# 10. Tester l'agent LangGraph
+python scripts/test_agent.py
+
+# 11. Réinitialiser l'environnement si besoin
 deactivate
 rm -rf .venv
-```
 ```

@@ -218,6 +218,7 @@ python scripts/test_llm.py
 ```
 
 ### Résultat attendu
+```
 [info     ] Réponse AVEC RAG :
 Pour construire un agent IA, le contexte mentionne LangGraph comme un framework spécifique pour construire des agents IA avec gestion d'état et workflows.
 [info     ] Comparaison                    avec_rag_length=154 sans_rag_length=117 sources_used=3
@@ -234,7 +235,7 @@ Je ne peux pas répondre à cette question avec les informations disponibles.
 [info     ] OpenRouterClient operationnel 
 [info     ] LLMService operationnel       
 [info     ] Pipeline RAG complet : question → retrieval → contexte → LLM → réponse
-
+```
 # Phase 6 — Pipeline RAG complet
 
 ## Architecture
@@ -420,7 +421,66 @@ pipeline = RAGPipeline(
 
 
 ---
+# Phase 9 — Agent IA (LangGraph)
 
+```
+PIPELINE STATIQUE (Phases 6-8) :
+Question → Retrieval → Reranking → Context → LLM → Réponse
+           TOUJOURS    TOUJOURS
+
+AGENT IA (Phase 9) :
+Question → Decision Node
+               │
+               ├── besoin documents ?
+               │        OUI → Retrieval → Reranking → LLM → Réponse
+               │        NON → LLM direct → Réponse
+               │
+               └── logique extensible (Phase 10 : tools)
+```
+## Architecture agent
+
+```
+START
+  │
+  ▼
+decision_node
+  ├── needs_retrieval=True → retriever_node → reranker_node → llm_node → END
+  │
+  │
+  └── needs_retrieval=False → llm_node → END 
+```
+## Installation LangGraph
+Ajouter à requirements.txt :
+
+```
+langgraph==0.2.28
+``` 
+## Tester l'agent
+
+```bash
+pip install langgraph==0.2.28
+python scripts/test_agent.py
+```
+
+## Utilisation directe
+
+```python
+from backend.app.agents.agent import run_agent
+
+result = run_agent("Quels sont les défis économiques de Madagascar ?")
+print(result.answer)
+print(result.needs_retrieval)
+print(result.steps_executed)
+```
+
+### Comportement
+
+| Question | Décision | Flux |
+|---|---|---|
+| "Qu'est-ce que FastAPI ?" | NON | decision → llm |
+| "Défis économiques Madagascar ?" | OUI | decision → retriever → reranker → llm |
+
+---
 
 ## Sans clé OpenRouter
 
