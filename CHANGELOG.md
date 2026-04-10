@@ -1,4 +1,4 @@
-## README.md — Mise à jour complète Phase 6
+## README.md — Mise à jour complète Phase 8
 
 ```markdown
 # RAG Agent System
@@ -531,6 +531,77 @@ python backend/run.py
 # Dans un second terminal
 python scripts/test_api_chat.py
 ```
+
+---
+## Phase 8 — Reranking sémantique
+
+### Principe
+```
+AVANT Phase 8 :
+
+Question → ChromaDB → top-4 documents (cosine)
+                              ↓
+                    Contexte potentiellement bruité
+                              ↓
+                           LLM
+
+APRÈS Phase 8 :
+
+Question → ChromaDB → top-12 documents (cosine)
+                              ↓
+                    Reranker LLM (pertinence fine)
+                              ↓
+                    top-4 documents rerankés
+                              ↓
+                    Contexte de haute qualité
+                              ↓
+                           LLM
+```
+### Implementation Plan
+```
+Fichiers créés/modifiés :
+├── backend/app/services/reranker_service.py   ← NOUVEAU
+└── backend/app/rag/chain.py                   ← MODIFIÉ (étape reranking)
+
+Point d'insertion dans chain.py :
+    Step 1 : retrieval       (existant)
+    Step 2 : reranking       ← NOUVEAU
+    Step 3 : context_build   (existant, renommé)
+    Step 4 : prompt_build    (existant, renommé)
+    Step 5 : llm_generation  (existant, renommé)
+```
+### Pipeline complet (5 étapes)
+
+| Étape | Composant | Rôle |
+|---|---|---|
+| 1 | RetrieverService | Embedding + ChromaDB + MMR |
+| 2 | RerankerService | Score sémantique LLM (NOUVEAU) |
+| 3 | ContextBuilder | Déduplication + qualité |
+| 4 | PromptBuilder | Template adaptatif EN→FR |
+| 5 | LLMService | Génération réponse |
+
+### Tester le reranking
+
+```bash
+python scripts/test_reranking.py
+```
+
+### Paramètres
+
+```python
+pipeline = RAGPipeline(
+    top_k=8,           # Documents récupérés par le retriever
+    use_reranking=True, # Activer le reranking
+    rerank_top_n=3,    # Documents conservés après reranking
+)
+```
+
+### Impact
+
+- Moins de bruit dans le contexte
+- Documents plus pertinents sémantiquement
+- Meilleure qualité de réponse LLM
+- Fallback automatique si reranker indisponible
 
 ---
 

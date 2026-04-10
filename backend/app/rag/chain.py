@@ -8,6 +8,15 @@ Améliorations :
 - Gestion adaptative selon confiance du contexte
 - Support MMR pour diversité des résultats
 - Rapport de qualité complet
+
+Pipeline RAG complet — Phase 8 : ajout reranking.
+
+Nouvelle séquence :
+1. Retrieval   — embedding + ChromaDB + MMR
+2. Reranking   — score sémantique LLM (NOUVEAU)
+3. Context     — déduplication + qualité
+4. Prompt      — template adaptatif EN→FR
+5. LLM         — génération réponse
 """
 
 import time
@@ -15,6 +24,7 @@ import hashlib
 from dataclasses import dataclass, field
 
 from backend.app.services.retriever_service import RetrieverService
+from backend.app.services.reranker_service import RerankerService
 from backend.app.services.llm_service import LLMService
 from backend.app.rag.context import ContextBuilder
 from backend.app.rag.prompts import PromptBuilder
@@ -25,7 +35,7 @@ logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Cache des réponses récentes
+# Cache des réponses
 # ---------------------------------------------------------------------------
 
 _query_cache: dict[str, "RAGPipelineResult"] = {}
@@ -77,14 +87,15 @@ class RAGPipelineResult:
     quality_score: float = 0.0
     confidence_level: str = "none"
     from_cache: bool = False
+    reranking_used: bool = False
 
     def format_full(self) -> str:
-        """Formate le résultat complet pour affichage."""
         lines = [
             "=" * 60,
             f"QUESTION : {self.question}",
             f"CONFIANCE : {self.confidence_level.upper()} "
             f"(score={self.quality_score:.3f})",
+            f"RERANKING : {'OUI' if self.reranking_used else 'NON'}",
             "=" * 60,
             "",
             "CONTEXTE UTILISE :",
@@ -104,7 +115,7 @@ class RAGPipelineResult:
                 score = src.get("score", 0)
                 confidence = src.get("confidence", "?")
                 lines.append(
-                    f"  [{i}] {src['id']} | topic={topic} | "
+                    f"  [{i}] {src['id'][:50]} | topic={topic} | "
                     f"score={score:.4f} | confiance={confidence}"
                 )
             lines.append("")
@@ -116,6 +127,7 @@ class RAGPipelineResult:
             f"  Contexte used   : {self.context_used}",
             f"  Qualité         : {self.quality_score:.3f}",
             f"  Confiance       : {self.confidence_level}",
+            f"  Reranking       : {self.reranking_used}",
             f"  Depuis cache    : {self.from_cache}",
             f"  Durée totale    : {self.total_duration_ms:.0f}ms",
             "",
@@ -125,7 +137,7 @@ class RAGPipelineResult:
         for step in self.steps:
             status = "OK" if step.success else "FAIL"
             lines.append(
-                f"  [{status}] {step.name:<20} {step.duration_ms:.0f}ms"
+                f"  [{status}] {step.name:<22} {step.duration_ms:.0f}ms"
             )
             if step.details:
                 for k, v in step.details.items():
@@ -141,19 +153,14 @@ class RAGPipelineResult:
 
 class RAGPipeline:
     """
-    Pipeline RAG complet et optimisé.
+    Pipeline RAG complet — Phase 8.
 
-    Améliorations Phase 6 :
-    - Cache requêtes pour éviter recomputation
-    - MMR optionnel pour diversifier les résultats
-    - Prompts adaptatifs selon confiance du contexte
-    - Métriques détaillées par étape
-    - Rapport de qualité complet
-
-    Usage :
-        pipeline = RAGPipeline()
-        result = pipeline.run("Qu'est-ce que ChromaDB ?")
-        print(result.format_full())
+    Séquence :
+    1. Retrieval   (ChromaDB + MMR)
+    2. Reranking   (LLM sémantique) ← NOUVEAU
+    3. Context     (déduplication + qualité)
+    4. Prompt      (adaptatif EN→FR)
+    5. LLM         (génération)
     """
 
     def __init__(
@@ -169,20 +176,26 @@ class RAGPipeline:
         mmr_lambda: float = 0.7,
         adaptive_k: bool = True,
         use_cache: bool = True,
+        use_reranking: bool = True,
+        rerank_top_n: int = 4,
+        rerank_min_score: float = 0.0,
     ):
         """
         Args:
-            top_k: Documents à récupérer
+            top_k: Documents à récupérer (retrieval)
             score_threshold: Score minimal similarité
             max_chars_per_doc: Limite caractères par document
             max_total_chars: Limite totale du contexte
             model: Modèle LLM OpenRouter
             temperature: Créativité LLM
             max_tokens: Tokens maximum sortie
-            use_mmr: Activer MMR pour diversité
-            mmr_lambda: Paramètre MMR (0.7 = équilibre)
-            adaptive_k: Top-k adaptatif selon scores
-            use_cache: Cache des requêtes récentes
+            use_mmr: Activer MMR
+            mmr_lambda: Paramètre MMR
+            adaptive_k: Top-k adaptatif
+            use_cache: Cache requêtes
+            use_reranking: Activer le reranking sémantique
+            rerank_top_n: Documents conservés après reranking
+            rerank_min_score: Score LLM minimal (0-10)
         """
         settings = get_settings()
 
@@ -196,8 +209,14 @@ class RAGPipeline:
         self._mmr_lambda = mmr_lambda
         self._adaptive_k = adaptive_k
         self._use_cache = use_cache
+        self._use_reranking = use_reranking
 
         self._retriever = RetrieverService(top_k=self._top_k)
+        self._reranker = RerankerService(
+            top_n=rerank_top_n,
+            min_score=rerank_min_score,
+            use_cache=use_cache,
+        ) if use_reranking else None
         self._context_builder = ContextBuilder(
             max_chars_per_doc=max_chars_per_doc,
             max_total_chars=max_total_chars,
@@ -211,27 +230,30 @@ class RAGPipeline:
             score_threshold=self._score_threshold,
             use_mmr=use_mmr,
             adaptive_k=adaptive_k,
+            use_reranking=use_reranking,
+            rerank_top_n=rerank_top_n,
             use_cache=use_cache,
             model=self._llm._model,
         )
 
     def run(self, question: str) -> RAGPipelineResult:
         """
-        Exécute le pipeline RAG complet.
+        Exécute le pipeline RAG complet avec reranking.
 
         Étapes :
         1. Vérification cache
-        2. Retrieval (cosine + MMR optionnel)
-        3. Construction contexte (avec déduplication)
-        4. Construction prompt adaptatif
-        5. Génération LLM
-        6. Mise en cache du résultat
+        2. Retrieval (cosine + MMR)
+        3. Reranking sémantique LLM (si activé)
+        4. Construction contexte
+        5. Construction prompt adaptatif
+        6. Génération LLM
+        7. Mise en cache
 
         Args:
             question: Question en langage naturel
 
         Returns:
-            RAGPipelineResult avec réponse et métriques complètes
+            RAGPipelineResult avec réponse et métriques
         """
         if not question or not question.strip():
             raise ValueError("La question ne peut pas être vide.")
@@ -242,22 +264,20 @@ class RAGPipeline:
         )
         if self._use_cache and cache_key in _query_cache:
             cached = _query_cache[cache_key]
-            logger.info(
-                "Query cache hit",
-                question=question,
-                cache_key=cache_key,
-            )
+            logger.info("Query cache hit", question=question[:60])
             cached.from_cache = True
             return cached
 
         pipeline_start = time.time()
         steps = []
+        reranking_used = False
 
         logger.info(
             "RAG Pipeline started",
             question=question,
             top_k=self._top_k,
             use_mmr=self._use_mmr,
+            use_reranking=self._use_reranking,
         )
 
         # ------------------------------------------------------------------
@@ -285,7 +305,7 @@ class RAGPipeline:
                 },
             ))
             logger.info(
-                "Step 1/4 — Retrieval",
+                "Step 1/5 — Retrieval",
                 found=retrieval_result.found,
                 method=retrieval_result.retrieval_method,
                 score_stats=retrieval_result.score_stats,
@@ -303,11 +323,77 @@ class RAGPipeline:
             raise
 
         # ------------------------------------------------------------------
-        # Étape 2 : Construction contexte
+        # Étape 2 : Reranking (NOUVEAU)
+        # ------------------------------------------------------------------
+        documents_for_context = retrieval_result.documents
+
+        if self._use_reranking and self._reranker and retrieval_result.found > 0:
+            step_start = time.time()
+            try:
+                reranked_docs, fallback_used = self._reranker.rerank_with_fallback(
+                    query=question,
+                    documents=retrieval_result.documents,
+                )
+
+                step_duration = (time.time() - step_start) * 1000
+                reranking_used = not fallback_used
+
+                rerank_stats = get_rerank_cache_stats() if not fallback_used else {}
+
+                steps.append(PipelineStep(
+                    name="reranking",
+                    duration_ms=step_duration,
+                    success=True,
+                    details={
+                        "original_count": retrieval_result.found,
+                        "reranked_count": len(reranked_docs),
+                        "fallback_used": fallback_used,
+                        "cache_stats": rerank_stats,
+                    },
+                ))
+                logger.info(
+                    "Step 2/5 — Reranking",
+                    original_count=retrieval_result.found,
+                    reranked_count=len(reranked_docs),
+                    fallback_used=fallback_used,
+                    duration_ms=round(step_duration),
+                )
+
+                # Mettre à jour les documents pour le contexte
+                documents_for_context = reranked_docs
+
+            except Exception as e:
+                step_duration = (time.time() - step_start) * 1000
+                steps.append(PipelineStep(
+                    name="reranking",
+                    duration_ms=step_duration,
+                    success=False,
+                    details={"error": str(e), "fallback": "retrieval_scores"},
+                ))
+                logger.error(
+                    "Reranking failed — using retrieval results",
+                    error=str(e),
+                )
+                # Fallback : continuer avec les résultats du retriever
+        else:
+            if self._use_reranking:
+                logger.info("Reranking skipped — no documents to rerank")
+
+        # ------------------------------------------------------------------
+        # Étape 3 : Construction contexte
         # ------------------------------------------------------------------
         step_start = time.time()
         try:
-            context = self._context_builder.build(retrieval_result)
+            from backend.app.services.retriever_service import RetrievalResult
+            context_input = RetrievalResult(
+                query=question,
+                documents=documents_for_context,
+                top_k=len(documents_for_context),
+                embedding_dim=retrieval_result.embedding_dim,
+                total_in_db=retrieval_result.total_in_db,
+                retrieval_method=retrieval_result.retrieval_method,
+            )
+            context = self._context_builder.build(context_input)
             step_duration = (time.time() - step_start) * 1000
             steps.append(PipelineStep(
                 name="context_build",
@@ -322,7 +408,7 @@ class RAGPipeline:
                 },
             ))
             logger.info(
-                "Step 2/4 — Context built",
+                "Step 3/5 — Context built",
                 document_count=context.document_count,
                 quality_score=round(context.quality_score, 3),
                 confidence_level=context.confidence_level,
@@ -339,7 +425,7 @@ class RAGPipeline:
             raise
 
         # ------------------------------------------------------------------
-        # Étape 3 : Construction prompt adaptatif
+        # Étape 4 : Construction prompt
         # ------------------------------------------------------------------
         step_start = time.time()
         try:
@@ -367,10 +453,9 @@ class RAGPipeline:
                 },
             ))
             logger.info(
-                "Step 3/4 — Prompt built",
+                "Step 4/5 — Prompt built",
                 prompt_type=prompt.prompt_type,
                 confidence_level=prompt.confidence_level,
-                prompt_length=prompt.total_length(),
                 duration_ms=round(step_duration),
             )
         except Exception as e:
@@ -384,7 +469,7 @@ class RAGPipeline:
             raise
 
         # ------------------------------------------------------------------
-        # Étape 4 : Génération LLM
+        # Étape 5 : Génération LLM
         # ------------------------------------------------------------------
         step_start = time.time()
         try:
@@ -401,7 +486,7 @@ class RAGPipeline:
                 details={"answer_length": len(answer)},
             ))
             logger.info(
-                "Step 4/4 — LLM generation",
+                "Step 5/5 — LLM generation",
                 answer_length=len(answer),
                 duration_ms=round(step_duration),
             )
@@ -443,6 +528,7 @@ class RAGPipeline:
             quality_score=context.quality_score,
             confidence_level=context.confidence_level,
             from_cache=False,
+            reranking_used=reranking_used,
         )
 
         # Mise en cache
@@ -454,12 +540,12 @@ class RAGPipeline:
 
         logger.info(
             "RAG Pipeline completed",
-            question=question,
+            question=question[:60],
             answer_length=len(answer),
             quality_score=round(context.quality_score, 3),
             confidence_level=context.confidence_level,
+            reranking_used=reranking_used,
             total_duration_ms=round(total_duration_ms),
-            from_cache=False,
         )
 
         return result
@@ -485,6 +571,7 @@ class RAGPipeline:
                 "document_count": rag_result.document_count,
                 "quality_score": rag_result.quality_score,
                 "confidence_level": rag_result.confidence_level,
+                "reranking_used": rag_result.reranking_used,
                 "duration_ms": rag_result.total_duration_ms,
             },
             "without_rag": {
@@ -493,13 +580,23 @@ class RAGPipeline:
                 "document_count": 0,
                 "quality_score": 0.0,
                 "confidence_level": "none",
+                "reranking_used": False,
                 "duration_ms": 0,
             },
         }
 
 
 # ---------------------------------------------------------------------------
-# Fonction utilitaire
+# Import helper pour chain.py
+# ---------------------------------------------------------------------------
+
+def get_rerank_cache_stats() -> dict:
+    from backend.app.services.reranker_service import get_rerank_cache_stats as _stats
+    return _stats()
+
+
+# ---------------------------------------------------------------------------
+# Fonction utilitaire — point d'entrée
 # ---------------------------------------------------------------------------
 
 def run_rag_pipeline(
@@ -512,13 +609,15 @@ def run_rag_pipeline(
     use_mmr: bool = True,
     adaptive_k: bool = True,
     use_cache: bool = True,
+    use_reranking: bool = True,
+    rerank_top_n: int = 4,
 ) -> RAGPipelineResult:
     """
-    Point d'entrée unique du pipeline RAG amélioré.
+    Point d'entrée unique du pipeline RAG avec reranking.
 
     Args:
         question: Question en langage naturel
-        top_k: Documents à récupérer
+        top_k: Documents à récupérer (retrieval)
         score_threshold: Score minimal
         model: Modèle LLM
         temperature: Créativité LLM
@@ -526,6 +625,8 @@ def run_rag_pipeline(
         use_mmr: Activer MMR
         adaptive_k: Top-k adaptatif
         use_cache: Cache requêtes
+        use_reranking: Activer reranking sémantique
+        rerank_top_n: Documents conservés après reranking
 
     Returns:
         RAGPipelineResult complet
@@ -539,5 +640,7 @@ def run_rag_pipeline(
         use_mmr=use_mmr,
         adaptive_k=adaptive_k,
         use_cache=use_cache,
+        use_reranking=use_reranking,
+        rerank_top_n=rerank_top_n,
     )
     return pipeline.run(question)

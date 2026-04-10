@@ -153,6 +153,7 @@ Résultat attendu :
 ```bash
 python scripts/test_chromadb.py
 ```
+
 # Phase 3 — Embeddings
 
 ## Modèle utilisé
@@ -234,9 +235,9 @@ Je ne peux pas répondre à cette question avec les informations disponibles.
 [info     ] LLMService operationnel       
 [info     ] Pipeline RAG complet : question → retrieval → contexte → LLM → réponse
 
-## Phase 6 — Pipeline RAG complet
+# Phase 6 — Pipeline RAG complet
 
-### Architecture
+## Architecture
 ```
 run_rag_pipeline(question)
         │
@@ -255,7 +256,7 @@ run_rag_pipeline(question)
                         └── OpenRouter /chat/completions
 ```
 
-### Améliorations implémentées
+## Améliorations implémentées
 
 | Amélioration | Impact |
 |---|---|
@@ -268,19 +269,19 @@ run_rag_pipeline(question)
 | Score qualité | Métrique objective du retrieval |
 | Retry embeddings | Résilience aux erreurs réseau |
 
-### Lancer le test pipeline
+## Lancer le test pipeline
 
 ```bash
 python scripts/test_rag_pipeline.py
 ```
 
-### Lancer le test documents réels
+## Lancer le test documents réels
 
 ```bash
 python scripts/test_rag_real.py
 ```
 
-### Résultats Phase 6 — Documents réels
+## Résultats Phase 6 — Documents réels
 
 | Question | Score | Confiance | Sources |
 |---|---|---|---|
@@ -291,7 +292,7 @@ python scripts/test_rag_real.py
 | Urbanisation Madagascar | 0.828 | HIGH | URBANIZATION x4 |
 | **Moyenne** | **0.706** | | |
 
-### Comportement multilingue
+## Comportement multilingue
 
 ```
 Documents  : anglais (PDFs Banque Mondiale)
@@ -299,7 +300,7 @@ Questions  : français (utilisateur)
 Réponses   : français (reformulation intelligente)
 ```
 
-### Point d'entrée unique
+## Point d'entrée unique
 
 ```python
 from backend.app.rag.chain import run_rag_pipeline
@@ -311,15 +312,15 @@ print(result.quality_score)
 ```
 
 ---
-## Phase 7 — Endpoint /chat
+# Phase 7 — Endpoint /chat
 
-### Lancer l'API
+## Lancer l'API
 
 ```bash
 python backend/run.py
 ```
 
-### Endpoints disponibles
+##  Endpoints disponibles
 
 | Méthode | Endpoint              | Description              |
 |---------|-----------------------|--------------------------|
@@ -327,10 +328,10 @@ python backend/run.py
 | GET     | /api/v1/chat/status   | Statut du pipeline RAG   |
 | POST    | /api/v1/chat          | Question → Réponse RAG   |
 
-### Documentation Swagger
+## Documentation Swagger
 Lancer l'API et aller sur : http://localhost:8000/docs
 
-### Format de réponse
+## Format de réponse
 
 ```json
 {
@@ -357,6 +358,67 @@ Lancer l'API et aller sur : http://localhost:8000/docs
   }
 }
 ```
+---
+
+# Phase 8 — Reranking sémantique
+
+## Principe
+```
+AVANT Phase 8 :
+
+Question → ChromaDB → top-4 documents (cosine)
+                              ↓
+                    Contexte potentiellement bruité
+                              ↓
+                           LLM
+
+APRÈS Phase 8 :
+
+Question → ChromaDB → top-12 documents (cosine)
+                              ↓
+                    Reranker LLM (pertinence fine)
+                              ↓
+                    top-4 documents rerankés
+                              ↓
+                    Contexte de haute qualité
+                              ↓
+                           LLM
+```
+
+## Pipeline complet (5 étapes)
+
+| Étape | Composant | Rôle |
+|---|---|---|
+| 1 | RetrieverService | Embedding + ChromaDB + MMR |
+| 2 | RerankerService | Score sémantique LLM (NOUVEAU) |
+| 3 | ContextBuilder | Déduplication + qualité |
+| 4 | PromptBuilder | Template adaptatif EN→FR |
+| 5 | LLMService | Génération réponse |
+
+## Tester le reranking
+
+```bash
+python scripts/test_reranking.py
+```
+
+## Paramètres
+
+```python
+pipeline = RAGPipeline(
+    top_k=8,           # Documents récupérés par le retriever
+    use_reranking=True, # Activer le reranking
+    rerank_top_n=3,    # Documents conservés après reranking
+)
+```
+
+## Impact
+
+- Moins de bruit dans le contexte
+- Documents plus pertinents sémantiquement
+- Meilleure qualité de réponse LLM
+- Fallback automatique si reranker indisponible
+
+
 ---
 
 
