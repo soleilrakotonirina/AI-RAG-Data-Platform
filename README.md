@@ -542,6 +542,102 @@ print(r.needs_retrieval, r.document_count)
 r = run_agent("Qu'est-ce que FastAPI ?")
 print(r.needs_retrieval, r.needs_tool)
 ``` 
+
+---
+
+## Phase 11 — Pipeline Ingestion (Docling)
+
+### Architecture pipeline
+
+```
+data/raw/          → Docling (extraction multi-format)
+    ↓
+data/processed/    → Markdown + frontmatter YAML
+    ↓
+Chunking (600 chars, overlap 100)
+    ↓
+Enrichment (langue, domaine, pays détectés automatiquement)
+    ↓
+data/embeddings/   → cache JSON (évite recalcul)
+    ↓
+ChromaDB           → index vectoriel final
+```
+
+
+### Formats supportés
+
+| Format | Extracteur | Notes |
+|--------|-----------|-------|
+| PDF    | Docling   | Sans OCR (rapide) |
+| DOCX   | Docling   | Structure préservée |
+| HTML   | Docling   | Nettoyage automatique |
+| TXT/MD | Lecture directe | Encodage auto |
+
+### Modes d'exécution
+
+| Situation de départ | Commande | Durée |
+|---------------------|----------|-------|
+| Seulement `data/raw/` | `--reset` | Lente (Docling + API) |
+| `data/raw/` + `data/processed/` | `--reset --from-processed` | Moyenne (API embeddings) |
+| `data/raw/` + `data/processed/` + `data/embeddings/` | `--reset --from-processed` | Très rapide (tout en cache) |
+| Nouveau PDF ajouté | _(aucune option)_ | Rapide (seul le nouveau traité) |
+| Bug fix chunking/enrichment | `--reset --from-processed` | Rapide si embeddings cachés |
+| Réinstallation complète | `--reset --force` | Lente (tout retraiter) |
+
+### Checkpoints persistants
+
+| Répertoire | Contenu | Créé automatiquement |
+|-----------|---------|---------------------|
+| `data/raw/` | Documents source originaux | Non (à placer manuellement) |
+| `data/processed/` | Markdown par document + fichier .meta (hash) | Oui |
+| `data/embeddings/` | Cache JSON des vecteurs | Oui |
+| `data/chromadb/` | Index vectoriel ChromaDB | Oui |
+
+### Format data/processed/
+
+Chaque document génère deux fichiers :
+
+```
+data/processed/
+├── nom_document.md      ← texte en Markdown avec frontmatter YAML
+└── nom_document.meta    ← hash SHA256 du fichier source (détection changements)
+```
+
+Format `.md` :
+
+```markdown
+---
+source: document.pdf
+file_type: pdf
+char_count: 46320
+word_count: 7312
+processed_at: 2026-04-11T04:50:19
+file_hash: a3f2b1c4d5e6f7a8
+---
+
+# Contenu du document...
+```
+
+### Enrichissement automatique
+
+Le pipeline détecte automatiquement pour chaque chunk :
+
+| Métadonnée | Valeurs possibles | Méthode |
+|-----------|-------------------|---------|
+| `language` | fr, en, unknown | Mots fréquents |
+| `domain` | economics, climate, finance, urbanization, development, general | Mots-clés thématiques |
+| `countries` | madagascar, global, west_bank_gaza, unknown | Mots-clés géographiques |
+| `indexed_at` | ISO timestamp | Automatique |
+
+### Vérification
+
+```bash
+python -c "
+import sys; sys.path.insert(0, '.')
+from backend.app.db.vector_store import VectorStore
+print('Documents ChromaDB:', VectorStore().count())
+"
+```
 ---
 
 ## Sans clé OpenRouter

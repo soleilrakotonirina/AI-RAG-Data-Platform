@@ -1,4 +1,4 @@
-## README.md — Mise à jour complète Phase 10
+## README.md — Mise à jour complète Phase 11
 
 ```markdown
 # RAG Agent System
@@ -755,6 +755,139 @@ print(r.needs_retrieval, r.needs_tool)
 ``` 
 ---
 
+## Phase 11 — Pipeline Ingestion (Docling)
+
+### Architecture pipeline
+
+```
+data/raw/          → Docling (extraction multi-format)
+    ↓
+data/processed/    → Markdown + frontmatter YAML
+    ↓
+Chunking (600 chars, overlap 100)
+    ↓
+Enrichment (langue, domaine, pays détectés automatiquement)
+    ↓
+data/embeddings/   → cache JSON (évite recalcul)
+    ↓
+ChromaDB           → index vectoriel final
+```
+
+### Installation Docling
+
+```bash
+pip install docling
+```
+
+### Formats supportés
+
+| Format | Extracteur | Notes |
+|--------|-----------|-------|
+| PDF    | Docling   | Sans OCR (rapide) |
+| DOCX   | Docling   | Structure préservée |
+| HTML   | Docling   | Nettoyage automatique |
+| TXT/MD | Lecture directe | Encodage auto |
+
+### Modes d'exécution
+
+| Situation de départ | Commande | Durée |
+|---------------------|----------|-------|
+| Seulement `data/raw/` | `--reset` | Lente (Docling + API) |
+| `data/raw/` + `data/processed/` | `--reset --from-processed` | Moyenne (API embeddings) |
+| `data/raw/` + `data/processed/` + `data/embeddings/` | `--reset --from-processed` | Très rapide (tout en cache) |
+| Nouveau PDF ajouté | _(aucune option)_ | Rapide (seul le nouveau traité) |
+| Bug fix chunking/enrichment | `--reset --from-processed` | Rapide si embeddings cachés |
+| Réinstallation complète | `--reset --force` | Lente (tout retraiter) |
+
+### Commandes disponibles
+
+```bash
+# Ingestion complète depuis zéro (seulement data/raw/ existe)
+python scripts/ingest_data.py --reset
+
+# Ingestion complète avec reset (force re-extraction Docling)
+python scripts/ingest_data.py --reset --force
+
+# Depuis data/processed/ avec reset ChromaDB (skip Docling)
+python scripts/ingest_data.py --reset --from-processed
+
+# Depuis data/processed/ sans reset (ajout incrémental)
+python scripts/ingest_data.py --from-processed
+
+# Avec domaine forcé
+python scripts/ingest_data.py --reset --from-processed --domain economics
+
+# Avec paramètres personnalisés
+python scripts/ingest_data.py --reset --chunk-size 800 --overlap 100 --batch-size 30
+```
+
+### Options disponibles
+
+| Option | Défaut | Description |
+|--------|--------|-------------|
+| `--reset` | false | Vider ChromaDB avant ingestion |
+| `--force` | false | Re-extraire même les fichiers déjà traités |
+| `--from-processed` | false | Charger depuis data/processed/ (skip Docling) |
+| `--chunk-size` | 600 | Taille max des chunks en caractères |
+| `--overlap` | 100 | Overlap entre chunks |
+| `--domain` | auto | Domaine forcé (economics, climate, finance...) |
+| `--batch-size` | 50 | Taille des batches d'indexation |
+
+### Checkpoints persistants
+
+| Répertoire | Contenu | Créé automatiquement |
+|-----------|---------|---------------------|
+| `data/raw/` | Documents source originaux | Non (à placer manuellement) |
+| `data/processed/` | Markdown par document + fichier .meta (hash) | Oui |
+| `data/embeddings/` | Cache JSON des vecteurs | Oui |
+| `data/chromadb/` | Index vectoriel ChromaDB | Oui |
+
+### Format data/processed/
+
+Chaque document génère deux fichiers :
+
+```
+data/processed/
+├── nom_document.md      ← texte en Markdown avec frontmatter YAML
+└── nom_document.meta    ← hash SHA256 du fichier source (détection changements)
+```
+
+Format `.md` :
+
+```markdown
+---
+source: document.pdf
+file_type: pdf
+char_count: 46320
+word_count: 7312
+processed_at: 2026-04-11T04:50:19
+file_hash: a3f2b1c4d5e6f7a8
+---
+
+# Contenu du document...
+```
+
+### Enrichissement automatique
+
+Le pipeline détecte automatiquement pour chaque chunk :
+
+| Métadonnée | Valeurs possibles | Méthode |
+|-----------|-------------------|---------|
+| `language` | fr, en, unknown | Mots fréquents |
+| `domain` | economics, climate, finance, urbanization, development, general | Mots-clés thématiques |
+| `countries` | madagascar, global, west_bank_gaza, unknown | Mots-clés géographiques |
+| `indexed_at` | ISO timestamp | Automatique |
+
+### Vérification
+
+```bash
+python -c "
+import sys; sys.path.insert(0, '.')
+from backend.app.db.vector_store import VectorStore
+print('Documents ChromaDB:', VectorStore().count())
+"
+```
+---
 
 ## Dépendances principales
 
@@ -769,7 +902,7 @@ print(r.needs_retrieval, r.needs_tool)
 | chromadb | 0.5.23 | Base vectorielle |
 | httpx | 0.27.0 | Client HTTP |
 | PyYAML | 6.0.2 | Lecture settings.yaml |
-| pypdf | 4.2.0 | Extraction texte PDF |
+| docling | 0.2.28 | Ingestion et Extraction texte |
 
 ---
 
@@ -786,7 +919,7 @@ print(r.needs_retrieval, r.needs_tool)
 - [x] Phase 8  — Reranking
 - [x] Phase 9  — Agent IA LangGraph
 - [x] Phase 10 — Tools (Agent)
-- [ ] Phase 11 — Pipeline ingestion (Docling)
+- [x] Phase 11 — Pipeline ingestion (Docling)
 - [ ] Phase 12 — Dagster (orchestration)
 - [ ] Phase 13 — OpenWebUI (interface)
 - [ ] Phase 14 — Tests automatisés
@@ -835,6 +968,9 @@ python scripts/test_agent.py
 
 # 11. Tester les tools
 python scripts/test_tools.py
+
+# 12. Tester le pipeline d'ingestion Docling
+python scripts/ingest_data.py --reset
 
 # 12. Réinitialiser l'environnement si besoin
 deactivate
