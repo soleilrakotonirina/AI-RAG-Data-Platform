@@ -29,3 +29,5 @@ DEFAULT_SCORE_THRESHOLD = 0.7
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MODEL = "mistralai/mistral-7b-instruct"
+
+EMBEDDING_MODEL: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"

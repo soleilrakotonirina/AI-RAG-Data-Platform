@@ -161,7 +161,7 @@ python scripts/test_chromadb.py
 | Paramètre  | Valeur                          |
 |------------|---------------------------------|
 | Provider   | OpenRouter                      |
-| Modèle     | openai/text-embedding-3-small   |
+| Modèle     | nvidia/llama-nemotron-embed-vl-1b-v2:free   |
 | Dimension  | 1536                            |
 | Fallback   | Hash déterministe (sans clé)    |
 
@@ -638,6 +638,115 @@ from backend.app.db.vector_store import VectorStore
 print('Documents ChromaDB:', VectorStore().count())
 "
 ```
+---
+
+## Phase 12 — Orchestration Dagster
+
+### Concept
+
+Dagster automatise le pipeline de données complet.
+Plus besoin de lancer manuellement `python scripts/ingest_data.py`.
+
+```
+AVANT Phase 12 (manuel) :
+python scripts/ingest_data.py --reset
+
+APRÈS Phase 12 (automatique) :
+Dagster schedule → détecte nouveaux fichiers → traite → ChromaDB mis à jour
+```
+
+### Ce que Dagster automatise
+
+```
+data/raw/ (nouveau PDF déposé)
+        ↓
+load_raw_docs_op   → détecte les fichiers nouveaux/modifiés
+        ↓
+docling_op         → extraction texte (Docling, sans OCR)
+        ↓
+chunking_op        → découpage (600 chars, overlap 100)
+        ↓
+enrichment_op      → métadonnées (langue, domaine, pays)
+        ↓
+embedding_op       → vecteurs OpenRouter (cache disque)
+        ↓
+chromadb_op        → indexation ChromaDB
+```
+
+### Installation
+
+```bash
+pip install dagster dagster-webserver
+```
+
+### Lancer Dagster
+
+```bash
+# Depuis la racine du projet
+dagster dev -f pipelines/dagster_project/repository.py
+
+# Avec persistance des données entre sessions
+export DAGSTER_HOME=/home/user/dagster_home
+dagster dev -f pipelines/dagster_project/repository.py
+```
+
+UI accessible sur : `http://localhost:3000`
+
+### Jobs disponibles
+
+| Job | Description | Équivalent script |
+|-----|-------------|------------------|
+| `ingestion_job` | data/raw/ → data/processed/ | Docling seul |
+| `indexing_job` | data/processed/ → ChromaDB | --from-processed |
+| `full_pipeline_job` | data/raw/ → ChromaDB (complet) | Pipeline entier |
+
+### Modes de configuration
+
+| Mode Dagster | Équivalent script | Description |
+|-------------|-------------------|-------------|
+| `mode=full, reset_chromadb=true` | `--reset --force` | Tout retraiter depuis zéro |
+| `mode=processed, reset_chromadb=true` | `--reset --from-processed` | Skip Docling, reset ChromaDB |
+| `mode=processed, reset_chromadb=false` | `--from-processed` | Skip Docling, ajout incrémental |
+| `mode=incremental, reset_chromadb=false` | _(aucune option)_ | Seulement nouveaux fichiers |
+
+
+### Schedules automatiques
+
+| Schedule | Cron | Job | Mode | Description |
+|----------|------|-----|------|-------------|
+| `daily_full_pipeline` | `0 0 * * *` | `full_pipeline_job` | full + reset | Reindexation complète chaque nuit |
+| `hourly_incremental_pipeline` | `0 * * * *` | `full_pipeline_job` | incremental | Nouveaux fichiers chaque heure |
+
+
+### Structure ops Dagster
+
+```
+Dagster Op            Logique réutilisée
+──────────────────────────────────────────────────────
+load_raw_docs_op   →  détection fichiers (hash-based)
+docling_op         →  ingestion/docling_pipeline.py
+chunking_op        →  indexing/chunking.py
+enrichment_op      →  indexing/enrichment.py
+embedding_op       →  indexing/embeddings.py
+chromadb_op        →  backend/app/db/vector_store.py
+```
+
+### Workflow quotidien après Phase 12
+
+```bash
+# Terminal 1 — Serveur API (une fois au démarrage)
+python backend/run.py
+
+# Terminal 2 — Orchestration Dagster (optionnel si schedules activés)
+dagster dev -f pipelines/dagster_project/repository.py
+
+# Notre seul travail ensuite :
+# → Déposer des PDFs dans data/raw/
+# → Dagster les détecte et traite automatiquement
+# → ChromaDB se met à jour
+# → L'API /chat répond avec les nouveaux documents
+```
+
 ---
 
 ## Sans clé OpenRouter

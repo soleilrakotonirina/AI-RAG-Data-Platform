@@ -67,6 +67,8 @@ data/embeddings/
 dagster_home/
 *.db
 
+.tmp_dagster_home_sihjlgko/
+
 # ================================
 # JUPYTER (si utilisé)
 # ================================

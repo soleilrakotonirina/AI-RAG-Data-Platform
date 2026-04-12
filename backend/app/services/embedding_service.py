@@ -20,8 +20,8 @@ from backend.app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-EMBEDDING_DIM = 1536
-EMBEDDING_MODEL = "openai/text-embedding-3-small"
+EMBEDDING_DIM = 2048
+EMBEDDING_MODEL = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
 

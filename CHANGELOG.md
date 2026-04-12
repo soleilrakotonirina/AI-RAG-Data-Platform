@@ -1,4 +1,4 @@
-## README.md — Mise à jour complète Phase 11
+## README.md — Mise à jour complète Phase 12
 
 ```markdown
 # RAG Agent System
@@ -119,7 +119,7 @@ Question utilisateur (français)
         │
         ▼
 embed_text()
-  ├── Modèle  : openai/text-embedding-3-small
+  ├── Modèle  : nvidia/llama-nemotron-embed-vl-1b-v2:free
   ├── Dim     : 1536
   ├── Cache   : LRU (évite appels API redondants)
   └── Retry   : automatique (backoff exponentiel)
@@ -316,7 +316,7 @@ rm -rf data/chromadb/
 | Paramètre | Valeur |
 |---|---|
 | Provider | OpenRouter |
-| Modèle | openai/text-embedding-3-small |
+| Modèle | nvidia/llama-nemotron-embed-vl-1b-v2:free |
 | Dimension | 1536 |
 | Cache | LRU en mémoire |
 | Fallback | Hash déterministe (sans clé) |
@@ -889,6 +889,241 @@ print('Documents ChromaDB:', VectorStore().count())
 ```
 ---
 
+## Phase 12 — Orchestration Dagster
+
+### Concept
+
+Dagster automatise le pipeline de données complet.
+Plus besoin de lancer manuellement `python scripts/ingest_data.py`.
+
+```
+AVANT Phase 12 (manuel) :
+python scripts/ingest_data.py --reset
+
+APRÈS Phase 12 (automatique) :
+Dagster schedule → détecte nouveaux fichiers → traite → ChromaDB mis à jour
+```
+
+### Ce que Dagster automatise
+
+```
+data/raw/ (nouveau PDF déposé)
+        ↓
+load_raw_docs_op   → détecte les fichiers nouveaux/modifiés
+        ↓
+docling_op         → extraction texte (Docling, sans OCR)
+        ↓
+chunking_op        → découpage (600 chars, overlap 100)
+        ↓
+enrichment_op      → métadonnées (langue, domaine, pays)
+        ↓
+embedding_op       → vecteurs OpenRouter (cache disque)
+        ↓
+chromadb_op        → indexation ChromaDB
+```
+
+### Ce que Dagster n'automatise PAS
+
+| Composant | Statut | Raison |
+|-----------|--------|--------|
+| `python backend/run.py` | Manuel | Serveur permanent |
+| OpenWebUI | Manuel | Service indépendant |
+| Dépôt de PDFs dans `data/raw/` | Manuel | Input utilisateur |
+
+### Installation
+
+```bash
+pip install dagster dagster-webserver
+```
+
+### Lancer Dagster
+
+```bash
+# Depuis la racine du projet
+dagster dev -f pipelines/dagster_project/repository.py
+
+# Avec persistance des données entre sessions
+export DAGSTER_HOME=/home/user/dagster_home
+dagster dev -f pipelines/dagster_project/repository.py
+```
+
+UI accessible sur : `http://localhost:3000`
+
+### Jobs disponibles
+
+| Job | Description | Équivalent script |
+|-----|-------------|------------------|
+| `ingestion_job` | data/raw/ → data/processed/ | Docling seul |
+| `indexing_job` | data/processed/ → ChromaDB | --from-processed |
+| `full_pipeline_job` | data/raw/ → ChromaDB (complet) | Pipeline entier |
+
+### Modes de configuration
+
+| Mode Dagster | Équivalent script | Description |
+|-------------|-------------------|-------------|
+| `mode=full, reset_chromadb=true` | `--reset --force` | Tout retraiter depuis zéro |
+| `mode=processed, reset_chromadb=true` | `--reset --from-processed` | Skip Docling, reset ChromaDB |
+| `mode=processed, reset_chromadb=false` | `--from-processed` | Skip Docling, ajout incrémental |
+| `mode=incremental, reset_chromadb=false` | _(aucune option)_ | Seulement nouveaux fichiers |
+
+### Config JSON pour l'UI Dagster
+
+**Pipeline complet avec reset :**
+
+```json
+{
+  "resources": {
+    "config": {
+      "config": {
+        "mode": "full",
+        "reset_chromadb": true,
+        "chunk_size": 600,
+        "overlap": 100,
+        "embedding_batch_size": 50,
+        "use_disk_cache": true
+      }
+    }
+  }
+}
+```
+
+**Mode incrémental (seulement nouveaux fichiers) :**
+
+```json
+{
+  "resources": {
+    "config": {
+      "config": {
+        "mode": "incremental",
+        "reset_chromadb": false,
+        "chunk_size": 600,
+        "overlap": 100
+      }
+    }
+  }
+}
+```
+
+**Depuis data/processed/ avec reset :**
+
+```json
+{
+  "resources": {
+    "config": {
+      "config": {
+        "mode": "processed",
+        "reset_chromadb": true,
+        "chunk_size": 600,
+        "overlap": 100
+      }
+    }
+  }
+}
+```
+
+### Lancer via ligne de commande (sans UI)
+
+```bash
+# Mode incrémental
+dagster job execute -f pipelines/dagster_project/repository.py \
+  -j full_pipeline_job \
+  --config '{"resources": {"config": {"config": {"mode": "incremental", "reset_chromadb": false}}}}'
+
+# Mode complet avec reset
+dagster job execute -f pipelines/dagster_project/repository.py \
+  -j full_pipeline_job \
+  --config '{"resources": {"config": {"config": {"mode": "full", "reset_chromadb": true}}}}'
+```
+
+### Schedules automatiques
+
+| Schedule | Cron | Job | Mode | Description |
+|----------|------|-----|------|-------------|
+| `daily_full_pipeline` | `0 0 * * *` | `full_pipeline_job` | full + reset | Reindexation complète chaque nuit |
+| `hourly_incremental_pipeline` | `0 * * * *` | `full_pipeline_job` | incremental | Nouveaux fichiers chaque heure |
+
+### Attention — Changement de modèle d'embedding
+
+Si on change de modèle d'embedding (ex: de `text-embedding-3-small` vers
+`nvidia/llama-nemotron-embed-vl-1b-v2:free`), les dimensions des vecteurs changent.
+ChromaDB refuse de mélanger des dimensions différentes.
+
+Action obligatoire :
+
+```bash
+# 1. Supprimer le cache embeddings
+rm -f data/embeddings/embeddings_cache.json
+
+# 2. Reset ChromaDB
+python -c "
+import sys; sys.path.insert(0, '.')
+from backend.app.db.vector_store import VectorStore
+VectorStore().reset()
+print('Reset OK')
+"
+
+# 3. Relancer le pipeline complet
+dagster job execute -f pipelines/dagster_project/repository.py \
+  -j full_pipeline_job \
+  --config '{"resources": {"config": {"config": {"mode": "processed", "reset_chromadb": true}}}}'
+```
+
+### Structure ops Dagster
+
+```
+Dagster Op            Logique réutilisée
+──────────────────────────────────────────────────────
+load_raw_docs_op   →  détection fichiers (hash-based)
+docling_op         →  ingestion/docling_pipeline.py
+chunking_op        →  indexing/chunking.py
+enrichment_op      →  indexing/enrichment.py
+embedding_op       →  indexing/embeddings.py
+chromadb_op        →  backend/app/db/vector_store.py
+```
+
+### Workflow quotidien après Phase 12
+
+```bash
+# Terminal 1 — Serveur API (une fois au démarrage)
+python backend/run.py
+
+# Terminal 2 — Orchestration Dagster (optionnel si schedules activés)
+dagster dev -f pipelines/dagster_project/repository.py
+
+# Notre seul travail ensuite :
+# → Déposer des PDFs dans data/raw/
+# → Dagster les détecte et traite automatiquement
+# → ChromaDB se met à jour
+# → L'API /chat répond avec les nouveaux documents
+```
+
+### Dagster ne remplace PAS
+
+- Le serveur FastAPI (`python backend/run.py`) — service permanent
+- L'agent LangGraph — intégré dans FastAPI
+- Le reranking, retriever, LLM — intégrés dans FastAPI
+
+Dagster gère uniquement le **pipeline offline de données**.
+FastAPI gère uniquement le **serving online des requêtes**.
+
+```
+OFFLINE (Dagster)          ONLINE (FastAPI)
+─────────────────          ────────────────
+data/raw/                  User question
+    ↓                          ↓
+Docling                    Embedding (query)
+    ↓                          ↓
+Chunking                   ChromaDB search
+    ↓                          ↓
+Embedding (docs)           Reranking
+    ↓                          ↓
+ChromaDB                   LLM generation
+                               ↓
+                           Réponse française
+```
+
+---
+
 ## Dépendances principales
 
 | Package | Version | Usage |
@@ -920,7 +1155,7 @@ print('Documents ChromaDB:', VectorStore().count())
 - [x] Phase 9  — Agent IA LangGraph
 - [x] Phase 10 — Tools (Agent)
 - [x] Phase 11 — Pipeline ingestion (Docling)
-- [ ] Phase 12 — Dagster (orchestration)
+- [x] Phase 12 — Dagster (orchestration)
 - [ ] Phase 13 — OpenWebUI (interface)
 - [ ] Phase 14 — Tests automatisés
 - [ ] Phase 15 — Optimisation
@@ -972,7 +1207,10 @@ python scripts/test_tools.py
 # 12. Tester le pipeline d'ingestion Docling
 python scripts/ingest_data.py --reset
 
-# 12. Réinitialiser l'environnement si besoin
+# 13. Lancer Dagster (pour automatiser l'ingestion)
+dagster dev -f pipelines/dagster_project/repository.py
+
+# 14. Réinitialiser l'environnement si besoin
 deactivate
 rm -rf .venv
 ```
